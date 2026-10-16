@@ -280,3 +280,30 @@ body {
   color: #ff7b7b;
   margin-top: 4px;
 }
+
+#race-toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 108px;
+  z-index: 45;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  width: min(320px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.race-toast {
+  background: rgba(4, 12, 30, 0.94);
+  color: #ffe14d;
+  border: 1px solid #f2c200;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: 600 14px Arial, sans-serif;
+  animation: toast-life 3.2s ease forwards;
+}
+@keyframes toast-life {
+  0% { opacity: 0; transform: translateX(36px); }
+  14% { opacity: 1; transform: none; }
+  74% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(18px); }
+}

@@ -57,6 +57,7 @@ export class WaitScreen implements Screen {
       x: 490, y: 560, w: 300, h: 64,
       onTap: () => {
         g.sound.click();
+        g.state.raceNumber = clock.raceNumber;
         g.show(new RaceScreen(g, clock.raceT));
       },
     };

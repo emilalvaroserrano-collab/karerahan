@@ -56,12 +56,12 @@ export const IMAGE_FILES: string[] = [
   ...Array.from({ length: 9 }, (_, i) => `cage_gates/gate_${i}.png`),
 ];
 
-/** Frames of the filmed left-to-right track pan. */
-export const TRACK_COUNT = 130;
+/** Original side-scrolling track sprites, bg_track_0 .. bg_track_187. */
+export const TRACK_COUNT = 188;
 
 export function trackSrc(i: number): string {
   const n = Math.max(0, Math.min(TRACK_COUNT - 1, i));
-  return `/sprites/track/t_${String(n).padStart(3, "0")}.jpg`;
+  return `/sprites/bg_track/bg_track_${n}.jpg`;
 }
 
 export const SOUND_FILES = [
@@ -93,7 +93,7 @@ export class Assets {
 
   trackFrame(i: number): HTMLImageElement {
     const n = Math.max(0, Math.min(TRACK_COUNT - 1, Math.round(i)));
-    const key = `t_${String(n).padStart(3, "0")}`;
+    const key = `bg_track_${n}`;
     let im = this.images.get(key);
     if (!im) {
       im = new Image();

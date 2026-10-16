@@ -45,6 +45,8 @@ export class BetScreen implements Screen {
   private locking = false;
   private onConfirm: (() => void) | null = null;
   private onAmount: (() => void) | null = null;
+  private pulse = 0;
+  private shownTotal = [0, 0, 0, 0, 0, 0, 0, 0];
 
   constructor(private game: Game) {}
 
@@ -78,8 +80,16 @@ export class BetScreen implements Screen {
     this.onConfirm = null;
   }
 
-  update(): void {
+  update(dt: number): void {
     const g = this.game;
+    const step = Number.isFinite(dt) ? dt : 0.016;
+    this.pulse = Math.max(0, this.pulse - step * 2.4);
+    for (let i = 0; i < 8; i++) {
+      const target = feed.total(i);
+      const cur = this.shownTotal[i];
+      const next = cur + (target - cur) * Math.min(1, step * 7);
+      this.shownTotal[i] = Math.abs(target - next) < 0.05 ? target : next;
+    }
     if (g.state.money < MIN_LOAD && g.state.totalBet <= 0) {
       g.show(new MenuScreen(g));
       return;
@@ -176,6 +186,7 @@ export class BetScreen implements Screen {
     feed.post(g.state.raceNumber, trap, TRAPS[trap].name, amt);
     g.sound.chip();
     this.selected = trap;
+    this.pulse = 1;
     this.refreshBar();
     return true;
   }
@@ -211,11 +222,19 @@ export class BetScreen implements Screen {
     const A = g.assets;
     const trap = card.trap;
     const on = this.selected === trap;
+    const pop = on ? 1 + this.pulse * 0.02 : 1;
     const staked = g.state.cellAmount("win", trap);
     ctx.save();
+    ctx.translate(card.x + card.w / 2, card.y + card.h / 2);
+    ctx.scale(pop, pop);
+    ctx.translate(-(card.x + card.w / 2), -(card.y + card.h / 2));
     ctx.fillStyle = on ? "rgba(242,194,0,0.18)" : "rgba(6,16,40,0.78)";
     ctx.strokeStyle = on ? "#ffe14d" : "#2b4d86";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = on ? 2 + this.pulse * 4 : 2;
+    if (on && this.pulse > 0) {
+      ctx.shadowColor = "#ffe14d";
+      ctx.shadowBlur = 16 * this.pulse;
+    }
     ctx.beginPath();
     ctx.roundRect(card.x, card.y, card.w, card.h, 12);
     ctx.fill();
@@ -239,7 +258,7 @@ export class BetScreen implements Screen {
     text(ctx, staked > 0 ? `YOU ${fmtMoney(staked)}` : "NO BET", card.x + 150, card.y + 92, {
       font: FONT_IMPACT, size: 18, color: staked > 0 ? "#ffe14d" : "#6d88b0", align: "left",
     });
-    text(ctx, `TOTAL ${fmtMoney(feed.total(trap))}`, card.x + card.w - 100, card.y + 108, {
+    text(ctx, `TOTAL ${fmtMoney(this.shownTotal[trap])}`, card.x + card.w - 100, card.y + 108, {
       font: FONT_DIGI, size: 15, color: "#ffffff",
     });
 
@@ -263,6 +282,7 @@ export class BetScreen implements Screen {
       onTap: () => {
         g.sound.click();
         this.selected = trap;
+        this.pulse = 1;
         this.refreshBar();
       },
     });

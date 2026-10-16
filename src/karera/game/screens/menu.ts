@@ -97,6 +97,7 @@ export class MenuScreen implements Screen {
         this.gateMsg = null;
         const clock = raceClock();
         if (clock.phase === "racing") {
+          g.state.raceNumber = clock.raceNumber;
           g.show(new WaitScreen(g));
           return;
         }
