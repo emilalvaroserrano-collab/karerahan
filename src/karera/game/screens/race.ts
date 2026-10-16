@@ -611,10 +611,10 @@ export class RaceScreen implements Screen {
     if (this.camId === "head") {
       const depth = Math.min(1, gap * 7);
       return {
-        x: 640 + lane * (86 - depth * 30),
-        y: 600 - depth * 160,
+        x: 760 + (h.prog - leader) * 820 + lane * (64 - depth * 18),
+        y: 590 - depth * 150,
         k: (1.12 - depth * 0.5) * (0.72 + 0.28 * ease),
-        flip: true,
+        flip: false,
         blur: depth > 0.62 ? "blur(1.1px)" : "none",
       };
     }
