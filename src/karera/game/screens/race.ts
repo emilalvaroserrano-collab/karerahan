@@ -47,6 +47,15 @@ const A_SCALE = 1.08;
 /** Portion of each pose hold spent crossfading into the next pose. */
 const A_BLEND = 0.3;
 
+type CamId = "rail" | "chase" | "head" | "tight";
+const CAM_CYCLE: CamId[] = ["rail", "chase", "head", "tight"];
+const CAM_NAME: Record<CamId, string> = {
+  rail: "SIDE",
+  chase: "BEHIND",
+  head: "HEAD ON",
+  tight: "LEADER",
+};
+
 interface Dust {
   x: number;
   y: number;
@@ -110,6 +119,11 @@ export class RaceScreen implements Screen {
   private snapped = false;
   /** Gate-open and photo-finish kick. Decays to 0. */
   private shake = 0;
+  /** Smoothed last-quarter crowd level so the cheer does not restart. */
+  private cheer = 0;
+  private camId: CamId = "rail";
+  private camHold = 6;
+  private camManual = 0;
   /** Per-trap progress gain last frame, used to stretch a horse that's moving up. */
   private gain = [0, 0, 0, 0, 0, 0, 0, 0];
   private lastProg = [0, 0, 0, 0, 0, 0, 0, 0];
@@ -256,7 +270,8 @@ export class RaceScreen implements Screen {
     // Start horn once. Hoofbeats loop for the whole race and do not include it.
     this.game.sound.musicMode = "race";
     this.game.sound.soundtrack(false);
-    this.game.sound.beginRace();
+    this.game.sound.stopAnnouncer();
+    this.game.sound.beginRace(this.game.state.raceNumber, this.t < 1);
   }
   exit(): void {
     // Out of the race: cut the bed; the next screen owns the audio again.
@@ -285,18 +300,6 @@ export class RaceScreen implements Screen {
       h.prevCyc = prev;
       this.gain[h.trap] = h.prog - this.lastProg[h.trap];
       this.lastProg[h.trap] = h.prog;
-      const marks: [number, number][] = h.lane >= 5
-        ? [[0.02, 0.5], [0.28, 1], [0.52, 0.45], [0.78, 0.85]]
-        : [[0.28, 0.3]];
-      if (runT > 0.15 && h.prog < 1.05) {
-        for (const [mark, accent] of marks) {
-          const hit = (prev < mark && cyc >= mark)
-            || (mark < 0.1 && prev > 0.85 && cyc < 0.2);
-          if (!hit) continue;
-          const near = 0.35 + 0.65 * (h.lane / 7);
-          this.game.sound.hoof(accent * near * gait * 0.55);
-        }
-      }
       const crossed = prev < 0.33 && cyc >= 0.33;
       if (crossed && this.t > GATE_OPEN_T && this.dust.length < 80) {
         const s = LANE_S[h.lane];
@@ -355,10 +358,25 @@ export class RaceScreen implements Screen {
         this.shake = Math.max(this.shake, 1);
       }
     }
-    const rush = this.finished
-      ? Math.max(0, 1 - this.arrivalT / 2.2)
-      : Math.max(0, Math.min(1, (leader - 0.72) / 0.28));
-    this.game.sound.setCheer(rush);
+    const running = runT > 0.2 && this.horses.some((h) => h.prog < 1.02);
+    const pace = this.horses.reduce((a, h) => (h.prog > a.prog ? h : a)).strideFreq;
+    this.game.sound.setGallop(running, pace);
+    const targetCheer = this.finished
+      ? Math.max(0, 1 - Math.max(0, this.arrivalT - 0.6) / 2.4)
+      : leader >= 0.75 ? Math.min(1, (leader - 0.75) / 0.25) : 0;
+    this.cheer += (targetCheer - this.cheer) * Math.min(1, dt * 1.6);
+    this.game.sound.setCheer(this.cheer);
+    if (this.finished || leader >= 0.88) this.camId = "tight";
+    else if (this.camManual > 0) this.camManual = Math.max(0, this.camManual - dt);
+    else if (this.t < GATE_OPEN_T + 2.4) this.camId = "rail";
+    else {
+      this.camHold -= dt;
+      if (this.camHold <= 0) {
+        const i = CAM_CYCLE.indexOf(this.camId);
+        this.camId = CAM_CYCLE[(i + 1) % CAM_CYCLE.length];
+        this.camHold = 8;
+      }
+    }
 
     // Photo finish on first crosser: brief slow-mo like the original, then
     // release. Race still lands in the ~38-52s window.
@@ -503,19 +521,27 @@ export class RaceScreen implements Screen {
     const A = this.game.assets;
     const emerge = Math.min(1, (this.t - GATE_OPEN_T) / 0.7);
     const ease = 1 - Math.pow(1 - emerge, 2);
-    for (const d of this.dust) {
-      const k = d.life / d.maxLife;
-      ctx.save();
-      ctx.translate(d.x, d.y);
-      ctx.globalAlpha = 0.38 * (1 - k);
-      ctx.fillStyle = "#c4a27a";
-      ctx.scale(2.4 + k * 3.2, 0.38);
-      ctx.beginPath();
-      ctx.arc(0, 0, d.size * (0.7 + 0.5 * k), 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+    const leader = Math.max(...this.horses.map((h) => h.prog));
+    const showDust = this.camId === "rail" || this.camId === "tight";
+    if (showDust) {
+      for (const d of this.dust) {
+        const k = d.life / d.maxLife;
+        ctx.save();
+        ctx.translate(d.x, d.y);
+        ctx.globalAlpha = 0.38 * (1 - k);
+        ctx.fillStyle = "#c4a27a";
+        ctx.scale(2.4 + k * 3.2, 0.38);
+        ctx.beginPath();
+        ctx.arc(0, 0, d.size * (0.7 + 0.5 * k), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
     }
-    const order = [...this.horses].sort((a, b) => a.lane - b.lane);
+    const order = this.camId === "head"
+      ? [...this.horses].sort((a, b) => a.prog - b.prog)
+      : this.camId === "chase"
+        ? [...this.horses].sort((a, b) => b.prog - a.prog)
+        : [...this.horses].sort((a, b) => a.lane - b.lane);
     for (const h of order) {
       const sheet = HORSE_A_FRAMES[h.trap + 1];
       const cyc = ((h.stride % 1) + 1) % 1;
@@ -526,49 +552,80 @@ export class RaceScreen implements Screen {
       const frac = f - Math.floor(f);
       const blend = Math.max(0, Math.min(1, (frac - (1 - A_BLEND)) / A_BLEND));
       const s = 0.55 + (LANE_S[h.lane] - 0.55) * ease;
-      const yBase = LANE_Y[h.lane];
-      const k = A_SCALE * s;
       const ph = 2 * Math.PI * cyc;
       const bob = Math.sin(ph + 0.9) * 2.0 * s;
-      const px = PACK_X + (h.prog - this.cam) * SPREAD;
-      const stallX = 8 + (7 - h.trap) * 28 + 100;
-      const x = stallX + (px - stallX) * ease;
-      if (x < -450 || x > 1550) continue;
+      const spot = this.placeHorse(h, ease, leader);
+      if (!spot) continue;
       const stretch = 1 + Math.min(0.07, Math.max(0, this.gain[h.trap] * 90));
-      const [ax, ay, aw, ah] = sheet[i0];
-      const dw0 = aw * k * stretch;
-      const dh0 = ah * k;
-      const hx = x + (stretch - 1) * dw0 * 0.22;
-      const blur = h.lane <= 1 ? "blur(1.15px)" : h.lane === 2 ? "blur(0.45px)" : "none";
+      const dw0 = sheet[i0][2] * spot.k * stretch;
+      const dh0 = sheet[i0][3] * spot.k;
+      const hx = spot.x + (stretch - 1) * dw0 * 0.22;
       ctx.save();
-      ctx.filter = blur;
-      ctx.fillStyle = `rgba(40, 24, 10, ${0.18 + h.lane * 0.035})`;
+      ctx.filter = spot.blur;
+      ctx.fillStyle = `rgba(40, 24, 10, ${spot.k > 0.9 ? 0.32 : 0.18})`;
       ctx.beginPath();
-      ctx.ellipse(hx, yBase + 2, dw0 * 0.28, 5 + h.lane * 0.35, 0, 0, Math.PI * 2);
+      ctx.ellipse(hx, spot.y + 2, dw0 * 0.28, 5 + spot.k * 3, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.globalAlpha = 0.18;
-      ctx.drawImage(
-        A.img(`horse_${h.trap + 1}_a`),
-        ax, ay, aw, ah, hx - 12 * s - dw0 / 2, yBase - dh0 + bob, dw0, dh0,
-      );
-      ctx.globalAlpha = 1;
-      ctx.drawImage(
-        A.img(`horse_${h.trap + 1}_a`),
-        ax, ay, aw, ah, hx - dw0 / 2, yBase - dh0 + bob, dw0, dh0,
-      );
+      const paint = (alpha: number, frame: number, dw: number, dh: number, dx: number) => {
+        const [fx, fy, fw, fh] = sheet[frame];
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        const left = hx + dx;
+        if (spot.flip) {
+          ctx.translate(left, 0);
+          ctx.scale(-1, 1);
+          ctx.drawImage(A.img(`horse_${h.trap + 1}_a`), fx, fy, fw, fh, -dw / 2, spot.y - dh + bob, dw, dh);
+        } else {
+          ctx.drawImage(A.img(`horse_${h.trap + 1}_a`), fx, fy, fw, fh, left - dw / 2, spot.y - dh + bob, dw, dh);
+        }
+        ctx.restore();
+      };
+      paint(0.18, i0, dw0, dh0, spot.flip ? 12 * spot.k : -12 * spot.k);
+      paint(1, i0, dw0, dh0, 0);
       if (blend > 0) {
-        const [bx, by, bw, bh] = sheet[i1];
-        const dw1 = bw * k * stretch;
-        const dh1 = bh * k;
-        ctx.globalAlpha = blend;
-        ctx.drawImage(
-          A.img(`horse_${h.trap + 1}_a`),
-          bx, by, bw, bh, hx - dw1 / 2, yBase - dh1 + bob, dw1, dh1,
-        );
+        const cell = sheet[i1];
+        paint(blend, i1, cell[2] * spot.k * stretch, cell[3] * spot.k, 0);
       }
-      ctx.filter = "none";
       ctx.restore();
     }
+  }
+
+  /** Side, chase-from-behind, head-on, or a tight leader lens. */
+  private placeHorse(
+    h: Horse,
+    ease: number,
+    leader: number,
+  ): { x: number; y: number; k: number; flip: boolean; blur: string } | null {
+    const s = 0.55 + (LANE_S[h.lane] - 0.55) * ease;
+    const k0 = A_SCALE * s;
+    const px = PACK_X + (h.prog - this.cam) * SPREAD;
+    const stallX = 8 + (7 - h.trap) * 28 + 100;
+    const x = stallX + (px - stallX) * ease;
+    if (this.camId === "rail" || this.camId === "tight") {
+      if (x < -450 || x > 1550) return null;
+      const blur = h.lane <= 1 ? "blur(1.15px)" : h.lane === 2 ? "blur(0.45px)" : "none";
+      return { x, y: LANE_Y[h.lane], k: k0, flip: false, blur };
+    }
+    const gap = Math.max(0, leader - h.prog);
+    const lane = h.lane - 3.5;
+    if (this.camId === "head") {
+      const depth = Math.min(1, gap * 7);
+      return {
+        x: 640 + lane * (86 - depth * 30),
+        y: 600 - depth * 160,
+        k: (1.12 - depth * 0.5) * (0.72 + 0.28 * ease),
+        flip: true,
+        blur: depth > 0.62 ? "blur(1.1px)" : "none",
+      };
+    }
+    const depth = Math.min(1, gap * 6.5);
+    return {
+      x: 900 - depth * 70 + lane * 30,
+      y: 455 + depth * 125,
+      k: (0.58 + depth * 0.62) * (0.78 + 0.22 * ease),
+      flip: false,
+      blur: depth < 0.18 ? "blur(0.7px)" : "none",
+    };
   }
 
   private drawHUD(ctx: CanvasRenderingContext2D): void {
@@ -648,6 +705,33 @@ export class RaceScreen implements Screen {
     });
     text(ctx, "KM/H", 1215, 674, {
       font: FONT_MOTOR, size: 14, color: "#9fd0ff", stroke: "#000000", strokeWidth: 3,
+    });
+    ctx.restore();
+  }
+
+  private drawCamButton(ctx: CanvasRenderingContext2D): void {
+    const g = this.game;
+    const b = {
+      x: 752, y: 12, w: 230, h: 46,
+      onTap: () => {
+        g.sound.click();
+        const i = CAM_CYCLE.indexOf(this.camId);
+        this.camId = CAM_CYCLE[(i + 1) % CAM_CYCLE.length];
+        this.camManual = 10;
+        this.camHold = 8;
+      },
+    };
+    g.buttons.add(b);
+    ctx.save();
+    ctx.fillStyle = "rgba(4, 12, 30, 0.78)";
+    ctx.strokeStyle = "#f2c200";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(b.x, b.y, b.w, b.h, 10);
+    ctx.fill();
+    ctx.stroke();
+    text(ctx, `CAM  ${CAM_NAME[this.camId]}`, b.x + b.w / 2, b.y + 24, {
+      font: FONT_MOTOR, size: 18, color: "#ffe14d",
     });
     ctx.restore();
   }
@@ -778,14 +862,31 @@ export class RaceScreen implements Screen {
     const mag = this.shake * 7;
     ctx.save();
     ctx.translate(Math.sin(this.t * 53) * mag, bob + Math.cos(this.t * 41) * mag * 0.55);
+    if (this.camId === "tight") {
+      ctx.translate(640, 460);
+      ctx.scale(1.42, 1.42);
+      ctx.translate(-560, -470);
+    } else if (this.camId === "chase") {
+      ctx.translate(640, 500);
+      ctx.scale(1.06, 1.06);
+      ctx.translate(-700, -500);
+    }
     this.drawTrack(ctx);
     const shade = 0.04 + 0.1 * (0.5 + 0.5 * Math.sin(this.cam * 21));
     ctx.fillStyle = `rgba(6, 14, 8, ${shade})`;
     ctx.fillRect(0, 0, 1280, 470);
     this.drawGates(ctx);
     this.drawHorses(ctx);
+    if (this.camId === "head" || this.camId === "chase") {
+      const lens = ctx.createRadialGradient(640, 430, 160, 640, 430, 780);
+      lens.addColorStop(0, "rgba(0,0,0,0)");
+      lens.addColorStop(1, "rgba(0,0,0,0.42)");
+      ctx.fillStyle = lens;
+      ctx.fillRect(0, 0, 1280, 876);
+    }
     ctx.restore();
     this.drawHUD(ctx);
+    this.drawCamButton(ctx);
     this.drawCorners(ctx);
     this.drawRaceHUD(ctx);
     this.drawArrival(ctx);
