@@ -1,15 +1,18 @@
 // Main menu: bg, logo, play, info/fullscreen/audio corners, credits dialog.
-import { CURRENCY, FONT_MOTOR } from "../constants";
+import { CURRENCY, FONT_MOTOR, MIN_LOAD } from "../constants";
 import { Game, Screen } from "../engine";
 import { Auth } from "../auth";
+import { raceClock } from "../schedule";
 import { drawCentered, drawStateHalf, text } from "../ui";
 import { renderCreditsDialog } from "./dialogs";
 import { AdminPanel } from "./admin";
 import { BetScreen } from "./bet";
+import { WaitScreen } from "./wait";
 import { LoginScreen } from "./login";
 
 export class MenuScreen implements Screen {
   private showCredits = false;
+  private gateMsg: string | null = null;
 
   constructor(private game: Game) {}
 
@@ -84,13 +87,30 @@ export class MenuScreen implements Screen {
       x: 586, y: 692, w: 107, h: 108,
       onTap: () => {
         g.sound.click();
-        g.state.newRace();
+        g.state.loadWallet();
+        if (g.state.money < MIN_LOAD) {
+          this.gateMsg = `NEED ${CURRENCY}${MIN_LOAD} TO ENTER THE TRACK`;
+          return;
+        }
+        this.gateMsg = null;
+        const clock = raceClock();
+        if (clock.phase === "racing") {
+          g.show(new WaitScreen(g));
+          return;
+        }
+        g.state.newRace(clock.raceNumber);
         g.show(new BetScreen(g));
       },
     };
     g.buttons.add(play);
     const ps = g.buttons.isPressed(play) ? 0.92 : 1;
     drawCentered(ctx, A.img("but_play"), 640, 746, 107 * ps, 108 * ps);
+    if (this.gateMsg) {
+      text(ctx, this.gateMsg, 640, 640, {
+        font: FONT_MOTOR, size: 22, color: "#ff7b7b",
+        stroke: "#000000", strokeWidth: 4,
+      });
+    }
 
     this.topButtons(ctx);
     this.accountButtons(ctx, me?.role === "admin");

@@ -10,6 +10,8 @@ export const FONT_MOTOR = "motorwerkregular";
 
 export const MIN_BET = 1;
 export const MAX_BET = 100;
+/** Minimum load required to stay in the race-track portal. */
+export const MIN_LOAD = 10;
 export const START_MONEY = 100;
 export const CHIP_VALUES = [1, 5, 10, 25, 50, 100];
 export const WIN_OCCURRENCE = 0.4; // chance a player-backed horse is forced to win

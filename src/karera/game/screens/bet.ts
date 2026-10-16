@@ -7,6 +7,7 @@ import {
   FONT_MOTOR,
   MAX_BET,
   MIN_BET,
+  MIN_LOAD,
   TRAPS,
   fmtMoney,
 } from "../constants";
@@ -16,9 +17,9 @@ import { text } from "../ui";
 import { renderMsgDialog } from "./dialogs";
 import { MenuScreen } from "./menu";
 import { RaceScreen } from "./race";
+import { raceClock } from "../schedule";
 
 const QUICK = [10, 20];
-const LOCK_S = 60;
 
 type Card = { trap: number; x: number; y: number; w: number; h: number };
 
@@ -44,11 +45,7 @@ export class BetScreen implements Screen {
   private onConfirm: (() => void) | null = null;
   private onAmount: (() => void) | null = null;
 
-  constructor(private game: Game) {
-    this.game.net.onState((s) => {
-      if (s.phase === "racing") this.game.show(new RaceScreen(this.game));
-    });
-  }
+  constructor(private game: Game) {}
 
   enter(): void {
     this.game.sound.musicMode = "bet";
@@ -79,36 +76,20 @@ export class BetScreen implements Screen {
     this.onConfirm = null;
   }
 
-  /** 60s clock starts only with 2 backed horses or 2 different players. */
-  private fieldReady(): boolean {
-    const horses = new Set<number>();
-    const players = new Set<string>();
-    const me = this.game.state.phone;
-    if (this.game.state.bets.length > 0 && me) players.add(me);
-    for (const b of this.game.state.bets) {
-      horses.add(b.a);
-      if (b.b >= 0) horses.add(b.b);
-    }
-    for (const b of this.game.net.state?.bets ?? []) {
-      horses.add(b.a);
-      if (b.b >= 0) horses.add(b.b);
-      if (b.phone) players.add(b.phone);
-    }
-    return horses.size >= 2 || players.size >= 2;
-  }
-
-  update(dt: number): void {
-    if (!this.fieldReady()) {
-      this.locking = false;
-      this.lock = 0;
+  update(): void {
+    const g = this.game;
+    if (g.state.money < MIN_LOAD && g.state.totalBet <= 0) {
+      g.show(new MenuScreen(g));
       return;
     }
-    if (!this.locking) {
-      this.locking = true;
-      this.lock = LOCK_S;
+    const clock = raceClock();
+    if (clock.raceNumber !== g.state.raceNumber) {
+      g.show(new MenuScreen(g));
+      return;
     }
-    this.lock -= dt;
-    if (this.lock <= 0) this.game.show(new RaceScreen(this.game));
+    this.locking = clock.phase === "betting";
+    this.lock = clock.countdown;
+    if (clock.phase === "racing") g.show(new RaceScreen(g));
   }
 
   private ensureBar(): void {
@@ -297,15 +278,14 @@ export class BetScreen implements Screen {
     if (this.locking) {
       const s = Math.max(0, Math.ceil(this.lock));
       const label = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-      text(ctx, `RACE IN ${label}`, 760, 58, { font: FONT_DIGI, size: 28, color: "#ffe14d" });
-    } else if (g.state.bets.length > 0) {
-      text(ctx, "WAITING FOR ANOTHER HORSE", 700, 58, {
-        font: FONT_DIGI, size: 22, color: "#9fd0ff",
+      text(ctx, `RACE ${g.state.raceNumber}  IN ${label}`, 700, 48, {
+        font: FONT_DIGI, size: 26, color: "#ffe14d",
+      });
+      text(ctx, "BET OR JUST WATCH", 700, 78, {
+        font: FONT_MOTOR, size: 16, color: "#9fd0ff",
       });
     } else {
-      text(ctx, "BET 2 HORSES TO START", 700, 58, {
-        font: FONT_DIGI, size: 22, color: "#9fd0ff",
-      });
+      text(ctx, "RACE STARTING", 700, 58, { font: FONT_DIGI, size: 26, color: "#ffe14d" });
     }
 
     const clear = {

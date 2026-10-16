@@ -30,7 +30,13 @@ const DEMO_BALANCE = 1000;
 
 let cache: StoreShape = { v: 1, users: [], house: 0 };
 let token: string | null = null;
-let persistTimer: ReturnType<typeof setTimeout> | undefined;
+let pendingDelta = 0;
+let deltaChain: Promise<void> = Promise.resolve();
+let watchPhone = "";
+let watchTimer: ReturnType<typeof setInterval> | undefined;
+let onBalance: ((balance: number) => void) | null = null;
+type WalletChannel = { unsubscribe: () => Promise<unknown> };
+let walletChannel: WalletChannel | null = null;
 
 async function sha256(s: string): Promise<string> {
   const salted = `karera::${s}`;
@@ -84,6 +90,8 @@ async function pullBundle(): Promise<void> {
   if (!supabase || !token) return;
   const { data, error } = await supabase.rpc("session_bundle", { p_token: token });
   if (error) throw new Error(error.message);
+  // Don't let a stale read wipe a bet/win that hasn't landed yet.
+  if (Math.abs(pendingDelta) > 0.001) return;
   applyBundle(data);
   const me = asUser((data as { me?: unknown } | null)?.me);
   if (!me) {
@@ -93,7 +101,9 @@ async function pullBundle(): Promise<void> {
     } catch {
       /* ignore */
     }
+    return;
   }
+  onBalance?.(me.balance);
 }
 
 function loadLocal(): StoreShape {
@@ -235,7 +245,90 @@ export const Auth = {
     return u;
   },
 
-  /** Add (or subtract) balance. Returns the new balance. */
+  /** Latest balance for this session, from the database, without resetting it. */
+  async refresh(): Promise<void> {
+    if (hasSupabase && token) {
+      try {
+        await pullBundle();
+      } catch {
+        /* keep the last known balance */
+      }
+    }
+  },
+
+  /** How much has been sent but not confirmed. Non-zero means don't overwrite. */
+  pending(): number {
+    return pendingDelta;
+  },
+
+  /**
+   * Follow this player's wallet. Broadcasts from Postgres apply immediately;
+   * a short poll covers anything the socket misses. Never writes a balance.
+   */
+  watch(phone: string, cb: (balance: number) => void): void {
+    onBalance = cb;
+    if (!hasSupabase || !supabase || !phone) return;
+    if (watchPhone === phone && walletChannel) return;
+    watchPhone = phone;
+    if (walletChannel) {
+      void walletChannel.unsubscribe();
+      walletChannel = null;
+    }
+    const channel = supabase.channel(`wallet:${phone}`);
+    walletChannel = channel;
+    channel.on("broadcast", { event: "balance" }, (msg) => {
+      const raw = (msg as { payload?: { balance?: unknown } }).payload?.balance;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || Math.abs(pendingDelta) > 0.001) return;
+      const u = cache.users.find((x) => x.phone === phone);
+      if (u) u.balance = n;
+      onBalance?.(n);
+    });
+    void channel.subscribe();
+    if (watchTimer) clearInterval(watchTimer);
+    watchTimer = setInterval(() => {
+      void this.refresh();
+    }, 2000);
+  },
+
+  /** Add or subtract the stored balance. Serialized so two bets can't clobber. */
+  pushDelta(phone: string, delta: number): void {
+    const d = Math.round(delta * 100) / 100;
+    if (!d) return;
+    const u = cache.users.find((x) => x.phone === phone);
+    if (u) u.balance = Math.max(0, Math.round((u.balance + d) * 100) / 100);
+    if (!hasSupabase || !supabase || !token) {
+      saveLocal();
+      return;
+    }
+    pendingDelta = Math.round((pendingDelta + d) * 100) / 100;
+    deltaChain = deltaChain.then(() => this.sendDelta(phone, d));
+  },
+
+  async sendDelta(phone: string, delta: number): Promise<void> {
+    if (!supabase || !token) return;
+    const { data, error } = await supabase.rpc("apply_wallet", {
+      p_token: token,
+      p_delta: delta,
+    });
+    pendingDelta = Math.round((pendingDelta - delta) * 100) / 100;
+    if (error || data === null || data === undefined) {
+      pendingDelta = 0;
+      try {
+        await pullBundle();
+      } catch {
+        /* keep last known */
+      }
+      return;
+    }
+    const n = Number(data);
+    if (!Number.isFinite(n)) return;
+    if (Math.abs(pendingDelta) < 0.001) {
+      const u = cache.users.find((x) => x.phone === phone);
+      if (u) u.balance = n;
+      onBalance?.(n);
+    }
+  },
   adjustBalance(phone: string, delta: number): number {
     const u = cache.users.find((x) => x.phone === phone);
     if (!u && !hasSupabase) throw new Error("Account not found.");
@@ -255,18 +348,13 @@ export const Auth = {
     return next;
   },
 
+  /** Absolute writes are not allowed. Convert to a delta against the stored wallet. */
   persistBalance(phone: string, balance: number): void {
     const u = cache.users.find((x) => x.phone === phone);
     const next = Math.max(0, Math.round(balance * 100) / 100);
-    if (u) u.balance = next;
-    if (hasSupabase && supabase && token) {
-      clearTimeout(persistTimer);
-      persistTimer = setTimeout(() => {
-        void supabase?.rpc("persist_balance", { p_token: token, p_balance: next });
-      }, 300);
-      return;
-    }
-    if (u) saveLocal();
+    const prev = u ? u.balance : next;
+    const delta = Math.round((next - prev) * 100) / 100;
+    if (delta !== 0) this.pushDelta(phone, delta);
   },
 
   creditHouse(amount: number): void {
@@ -295,6 +383,12 @@ export const Auth = {
 
   clearSession(): void {
     token = null;
+    watchPhone = "";
+    onBalance = null;
+    if (watchTimer) clearInterval(watchTimer);
+    watchTimer = undefined;
+    if (walletChannel) void walletChannel.unsubscribe();
+    walletChannel = null;
     try {
       localStorage.removeItem(SESSION_KEY);
       localStorage.removeItem(TOKEN_KEY);

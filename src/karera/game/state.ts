@@ -5,19 +5,20 @@ import {
   MAX_BET,
   MIN_BET,
   Odds,
-  START_MONEY,
   TRAPS,
   fmtOdds,
 } from "./constants";
+import { mulberry32 } from "./schedule";
 import { Auth } from "./auth";
 import { Pool } from "./parimutuel";
 
 export { fmtOdds };
 
 export class GameState {
-  /** Logged-in phone (null until login). Wallet persists per user. */
+  /** Shared race everyone is on. 0 until they enter the track. */
+  raceNumber = 0;
   phone: string | null = null;
-  private _money = START_MONEY;
+  private _money = 0;
   bets: BetCell[] = [];
   selectedChip = 0; // index into CHIP_VALUES
   betPage: 0 | 1 = 0;
@@ -39,14 +40,22 @@ export class GameState {
     return this._money;
   }
   set money(v: number) {
-    this._money = Math.max(0, Math.round(v * 100) / 100);
-    if (this.phone) Auth.persistBalance(this.phone, this._money);
+    const next = Math.max(0, Math.round(v * 100) / 100);
+    const delta = Math.round((next - this._money) * 100) / 100;
+    this._money = next;
+    if (this.phone && delta !== 0) Auth.pushDelta(this.phone, delta);
   }
 
-  /** Pull the wallet balance of the logged-in user into this session. */
+  /** Pull the live wallet. Never invents a starting balance. */
   loadWallet(): void {
-    const u = this.phone ? Auth.getUser(this.phone) : undefined;
-    this._money = u ? u.balance : START_MONEY;
+    if (!this.phone) return;
+    const u = Auth.getUser(this.phone);
+    if (u && Auth.pending() === 0) this._money = Math.round(u.balance * 100) / 100;
+    Auth.watch(this.phone, (b) => {
+      if (Auth.pending() !== 0) return;
+      this._money = Math.max(0, Math.round(b * 100) / 100);
+    });
+    void Auth.refresh();
   }
 
   get chipValue(): number {
@@ -109,15 +118,16 @@ export class GameState {
     return this.totalBet >= MIN_BET;
   }
 
-  /** Reset bets/odds/pool for a new race. Wallet carries over; broke players
-   *  must ask an admin to load balance (no free recharge). */
-  newRace(): void {
+  /** Reset bets/odds/pool for the shared race number. */
+  newRace(raceNumber = this.raceNumber): void {
+    this.raceNumber = raceNumber;
+    const rnd = mulberry32((raceNumber || 1) * 9973 + 1);
     this.bets = [];
     this.cellChip.clear();
     this.betPage = 0;
     this.selectedChip = 0;
-    this.strength = Array.from({ length: 8 }, () => Math.random());
-    this.odds = freshOdds(this.strength);
+    this.strength = Array.from({ length: 8 }, () => rnd());
+    this.odds = freshOdds(this.strength, rnd);
     this.pool = new Pool(this.strength);
   }
 
@@ -127,9 +137,9 @@ export class GameState {
 }
 
 /** Generate odds correlated with strength: strong horses pay little. */
-export function freshOdds(strength?: number[]): Odds {
-  const s = strength ?? Array.from({ length: 8 }, () => Math.random());
-  const jit = () => 0.92 + Math.random() * 0.16;
+export function freshOdds(strength?: number[], rnd: () => number = Math.random): Odds {
+  const s = strength ?? Array.from({ length: 8 }, () => rnd());
+  const jit = () => 0.92 + rnd() * 0.16;
   const win = s.map((v) => Math.max(1.05, (1.15 + Math.pow(1 - v, 1.6) * 15.5) * jit()));
   const place = s.map((v) => Math.max(1.0, (1.05 + Math.pow(1 - v, 1.4) * 6.2) * jit()));
   const show = s.map((v) => Math.max(1.0, (1.02 + Math.pow(1 - v, 1.3) * 2.9) * jit()));

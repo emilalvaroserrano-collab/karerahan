@@ -6,6 +6,7 @@ import {
   FONT_IMPACT,
   FONT_MOTOR,
   HOUSE_TAKE,
+  MIN_LOAD,
   TRAPS,
   WIN_OCCURRENCE,
   fmtMoney,
@@ -16,6 +17,9 @@ import { drawCentered, drawStateHalf, text } from "../ui";
 import { DLG_CX, drawPanelBox, drawDim } from "./dialogs";
 import { HORSE_A_FRAMES, THUMB_FRAME } from "../horseFrames";
 import { BetScreen } from "./bet";
+import { MenuScreen } from "./menu";
+import { WaitScreen } from "./wait";
+import { mulberry32, raceClock } from "../schedule";
 
 export const HUD_COL_X = [184, 309, 433, 557, 683, 808, 931, 1053];
 const HUD_BADGE_Y = 808;
@@ -104,10 +108,16 @@ export class RaceScreen implements Screen {
   /** Current badge x per trap; glides toward its rank slot (trap i starts reversed). */
   private trapX: number[] = [...HUD_COL_X].reverse();
 
-  constructor(private game: Game) {
-    this.decideRace();
-    // Lock the pool from the server's centralized bets (house take already
-    // credited server-side at lock); winners split the rest pro-rata.
+  constructor(private game: Game, startAt = 0) {
+    const rnd = mulberry32((this.game.state.raceNumber || 1) * 9973 + 99);
+    const prev = Math.random;
+    Math.random = rnd;
+    try {
+      this.decideRace();
+    } finally {
+      Math.random = prev;
+    }
+    // Lock the pool from this player's bets on the shared race.
     const mine = this.playerBets();
     const total = mine.reduce((s, b) => s + b.amount, 0);
     this.poolTotal = total;
@@ -115,6 +125,13 @@ export class RaceScreen implements Screen {
     const winTotal = winBets.reduce((s, b) => s + b.amount, 0);
     this.div = winTotal > 0 ? (total * (1 - HOUSE_TAKE)) / winTotal : 0;
     this.useOdds = this.game.state.bets.length > 0;
+    if (startAt > 0.2) {
+      this.t = startAt;
+      if (startAt > GATE_OPEN_T) {
+        this.gatesGone = 1;
+        this.gatesOpened = true;
+      }
+    }
   }
 
   private playerBets(): BetCell[] {
@@ -609,9 +626,7 @@ export class RaceScreen implements Screen {
             g.state.muted = g.sound.muted;
           } else {
             g.sound.click();
-            // Forfeit: refund bets, back to bet screen.
-            g.state.clearBets();
-            g.show(new BetScreen(g));
+            this.leaveTrack();
           }
         },
       };
@@ -699,11 +714,25 @@ export class RaceScreen implements Screen {
     }
   }
 
-  private nextRace(): void {
+  private leaveTrack(): void {
     const g = this.game;
-    g.state.newRace();
-    g.net.send({ type: "next_race" });
-    g.show(new BetScreen(g));
+    if (!this.paidOut) g.state.clearBets();
+    g.state.loadWallet();
+    if (g.state.money < MIN_LOAD) {
+      g.show(new MenuScreen(g));
+      return;
+    }
+    const clock = raceClock();
+    if (clock.phase === "betting") {
+      g.state.newRace(clock.raceNumber);
+      g.show(new BetScreen(g));
+      return;
+    }
+    g.show(new WaitScreen(g));
+  }
+
+  private nextRace(): void {
+    this.leaveTrack();
   }
 
   render(ctx: CanvasRenderingContext2D): void {
