@@ -20,6 +20,7 @@ import { BetScreen } from "./bet";
 import { MenuScreen } from "./menu";
 import { WaitScreen } from "./wait";
 import { mulberry32, raceClock } from "../schedule";
+import { feed } from "../feed";
 
 export const HUD_COL_X = [184, 309, 433, 557, 683, 808, 931, 1053];
 const HUD_BADGE_Y = 808;
@@ -243,6 +244,8 @@ export class RaceScreen implements Screen {
   }
 
   enter(): void {
+    const phone = this.game.state.phone;
+    if (phone) feed.join(phone, this.game.state.raceNumber);
     // Start horn once. Hoofbeats loop for the whole race and do not include it.
     this.game.sound.musicMode = "race";
     this.game.sound.soundtrack(false);

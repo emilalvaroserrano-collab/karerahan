@@ -9,6 +9,7 @@ import { AdminPanel } from "./admin";
 import { BetScreen } from "./bet";
 import { WaitScreen } from "./wait";
 import { LoginScreen } from "./login";
+import { feed } from "../feed";
 
 export class MenuScreen implements Screen {
   private showCredits = false;
@@ -17,6 +18,7 @@ export class MenuScreen implements Screen {
   constructor(private game: Game) {}
 
   enter(): void {
+    feed.leave();
     // Menu stays quiet: BGM + narration belong to the betting phase.
     this.game.sound.musicMode = "bgm";
     this.game.sound.soundtrack(false);

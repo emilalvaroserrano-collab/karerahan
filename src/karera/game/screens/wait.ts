@@ -7,6 +7,7 @@ import { text } from "../ui";
 import { BetScreen } from "./bet";
 import { MenuScreen } from "./menu";
 import { RaceScreen } from "./race";
+import { feed } from "../feed";
 
 export class WaitScreen implements Screen {
   constructor(private game: Game) {}
@@ -14,6 +15,8 @@ export class WaitScreen implements Screen {
   enter(): void {
     this.game.sound.musicMode = "bgm";
     this.game.sound.soundtrack(false);
+    const phone = this.game.state.phone;
+    if (phone) feed.join(phone, raceClock().raceNumber);
   }
   exit(): void {}
 
@@ -39,7 +42,7 @@ export class WaitScreen implements Screen {
 
     g.buttons.clear();
     text(ctx, "RACE IN PROGRESS", 640, 280, { font: FONT_IMPACT, size: 54, color: "#ffffff" });
-    text(ctx, `RACE ${clock.raceNumber}`, 640, 340, { font: FONT_DIGI, size: 28, color: "#9fd0ff" });
+    text(ctx, `RACE ${clock.raceNumber}   ·   ONLINE ${feed.online}`, 640, 340, { font: FONT_DIGI, size: 28, color: "#9fd0ff" });
     const s = Math.max(0, Math.ceil(clock.nextIn));
     const label = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
     text(ctx, `NEXT RACE IN ${label}`, 640, 400, { font: FONT_DIGI, size: 36, color: "#ffe14d" });

@@ -405,6 +405,10 @@ export const Auth = {
     }
   },
 
+  sessionToken(): string | null {
+    return token;
+  },
+
   currentUser(): User | null {
     const p = this.sessionPhone();
     return p ? this.getUser(p) ?? null : null;

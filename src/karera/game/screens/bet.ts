@@ -18,6 +18,7 @@ import { renderMsgDialog } from "./dialogs";
 import { MenuScreen } from "./menu";
 import { RaceScreen } from "./race";
 import { raceClock } from "../schedule";
+import { feed } from "../feed";
 
 const QUICK = [10, 20];
 
@@ -64,6 +65,7 @@ export class BetScreen implements Screen {
     amt?.addEventListener("input", this.onAmount);
     el("bet-confirm")?.addEventListener("click", this.onConfirm);
     this.refreshBar();
+    if (this.game.state.phone) feed.join(this.game.state.phone, this.game.state.raceNumber);
   }
 
   exit(): void {
@@ -171,6 +173,7 @@ export class BetScreen implements Screen {
       return false;
     }
     g.net.placeBet("win", trap, -1, amt);
+    feed.post(g.state.raceNumber, trap, TRAPS[trap].name, amt);
     g.sound.chip();
     this.selected = trap;
     this.refreshBar();
@@ -233,8 +236,11 @@ export class BetScreen implements Screen {
     text(ctx, `PAYS x${price.toFixed(2)}`, card.x + 150, card.y + 64, {
       font: FONT_DIGI, size: 18, color: "#9fd0ff", align: "left",
     });
-    text(ctx, staked > 0 ? `BET ${fmtMoney(staked)}` : "NO BET", card.x + 150, card.y + 92, {
+    text(ctx, staked > 0 ? `YOU ${fmtMoney(staked)}` : "NO BET", card.x + 150, card.y + 92, {
       font: FONT_IMPACT, size: 18, color: staked > 0 ? "#ffe14d" : "#6d88b0", align: "left",
+    });
+    text(ctx, `TOTAL ${fmtMoney(feed.total(trap))}`, card.x + card.w - 100, card.y + 108, {
+      font: FONT_DIGI, size: 15, color: "#ffffff",
     });
 
     QUICK.forEach((v, i) => {
@@ -278,8 +284,8 @@ export class BetScreen implements Screen {
     if (this.locking) {
       const s = Math.max(0, Math.ceil(this.lock));
       const label = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-      text(ctx, `RACE ${g.state.raceNumber}  IN ${label}`, 700, 48, {
-        font: FONT_DIGI, size: 26, color: "#ffe14d",
+      text(ctx, `RACE ${g.state.raceNumber}  IN ${label}   ONLINE ${feed.online}`, 760, 48, {
+        font: FONT_DIGI, size: 22, color: "#ffe14d",
       });
       text(ctx, "BET OR JUST WATCH", 700, 78, {
         font: FONT_MOTOR, size: 16, color: "#9fd0ff",
@@ -295,6 +301,7 @@ export class BetScreen implements Screen {
         g.sound.click();
         g.state.clearBets();
         g.net.clearBets();
+        feed.clear(g.state.raceNumber);
         this.locking = false;
         this.lock = 0;
         this.refreshBar();
