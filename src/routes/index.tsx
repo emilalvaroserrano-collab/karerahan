@@ -6,6 +6,7 @@ export const Route = createFileRoute("/")({ component: Home });
 
 const SHELL = `
 <canvas id="game"></canvas>
+<div id="stage-ui">
 <div data-orientation="landscape" class="orientation-msg-container">
   <p class="orientation-msg-text">Please rotate your device</p>
 </div>
@@ -49,6 +50,7 @@ const SHELL = `
     </table>
     <button id="ad-close" class="ghost" type="button">CLOSE</button>
   </div>
+</div>
 </div>`;
 
 function Home() {

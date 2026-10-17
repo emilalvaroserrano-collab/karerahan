@@ -8,6 +8,7 @@ import {
   MAX_BET,
   MIN_BET,
   MIN_LOAD,
+  HOUSE_TAKE,
   TRAPS,
   fmtMoney,
 } from "../constants";
@@ -161,6 +162,16 @@ export class BetScreen implements Screen {
   }
 
   /** Deduct `amount` from the signed-in load and record a win bet on `trap`. */
+  /** Multiple from money actually on the board this race, not the odds table. */
+  private liveMultiple(trap: number): number {
+    const g = this.game;
+    const stakes = Array.from({ length: 8 }, (_, i) => Math.max(feed.total(i), g.state.cellAmount("win", i)));
+    const total = stakes.reduce((s, n) => s + n, 0);
+    const on = stakes[trap];
+    if (on <= 0 || total <= 0) return 0;
+    return Math.round(((total * (1 - HOUSE_TAKE)) / on) * 100) / 100;
+  }
+
   private place(trap: number, amount: number): boolean {
     const g = this.game;
     const amt = Math.round(amount * 100) / 100;
@@ -251,8 +262,8 @@ export class BetScreen implements Screen {
     text(ctx, `${trap + 1}  ${TRAPS[trap].name}`, card.x + 150, card.y + 36, {
       font: FONT_MOTOR, size: 18, color: "#ffffff", align: "left",
     });
-    const price = g.state.odds.win[trap];
-    text(ctx, `PAYS x${price.toFixed(2)}`, card.x + 150, card.y + 64, {
+    const price = this.liveMultiple(trap);
+    text(ctx, price > 0 ? `PAYS x${price.toFixed(2)}` : "PAYS —", card.x + 150, card.y + 64, {
       font: FONT_DIGI, size: 18, color: "#9fd0ff", align: "left",
     });
     text(ctx, staked > 0 ? `YOU ${fmtMoney(staked)}` : "NO BET", card.x + 150, card.y + 92, {

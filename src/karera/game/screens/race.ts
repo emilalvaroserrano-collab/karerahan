@@ -8,7 +8,6 @@ import {
   HOUSE_TAKE,
   MIN_LOAD,
   TRAPS,
-  WIN_OCCURRENCE,
   fmtMoney,
 } from "../constants";
 import { Game, Screen } from "../engine";
@@ -21,7 +20,9 @@ import { MenuScreen } from "./menu";
 import { WaitScreen } from "./wait";
 import { mulberry32, raceClock } from "../schedule";
 import { feed } from "../feed";
+import { Auth } from "../auth";
 import { TRACK_SHIFT } from "../trackShift";
+import { gallopPose } from "../gallopIk";
 
 export const HUD_COL_X = [184, 309, 433, 557, 683, 808, 931, 1053];
 const HUD_BADGE_Y = 808;
@@ -44,8 +45,6 @@ const A_CYCLE = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 /** Uniform scale for every pose (avg cell ~278px → ~300px on screen), so no
  *  pose ever pops in size; feet stay pinned to yBase. */
 const A_SCALE = 1.08;
-/** Portion of each pose hold spent crossfading into the next pose. */
-const A_BLEND = 0.3;
 
 type CamId = "rail" | "chase" | "head" | "tight";
 const CAM_CYCLE: CamId[] = ["rail", "chase", "head", "tight"];
@@ -64,6 +63,8 @@ interface Dust {
   life: number;
   maxLife: number;
   size: number;
+  /** 0..1 picks a lighter or darker dirt tone. */
+  shade: number;
 }
 
 interface Horse {
@@ -93,6 +94,8 @@ export class RaceScreen implements Screen {
   private horses: Horse[] = [];
   private order: number[] = [];
   private cam = 0;
+  /** Track frame position. Keeps scrolling after the finish so the field never runs in place. */
+  private ground = 0;
   private gatesGone = 0; // 0..1 exit animation
   private flash = 0;
   private slowmo = 1;
@@ -108,10 +111,8 @@ export class RaceScreen implements Screen {
   private dust: Dust[] = [];
   /** Locked pool numbers (house take already credited at lock). */
   private poolTotal = 0;
-  /** Final WIN dividend for this race's winner (stake × dividend). */
+  /** Final WIN multiple from this race's actual stakes only. */
   private div = 0;
-  /** Local fixed-odds bets pay the posted price instead of the server pool. */
-  private useOdds = false;
   /** Broadcast HUD: frozen winning clock + smoothed speed readout. */
   private winClock = 0;
   private prevProg = 0;
@@ -140,13 +141,11 @@ export class RaceScreen implements Screen {
       Math.random = prev;
     }
     // Lock the pool from this player's bets on the shared race.
-    const mine = this.playerBets();
-    const total = mine.reduce((s, b) => s + b.amount, 0);
+    const stakes = this.actualStakes();
+    const total = stakes.reduce((s, n) => s + n, 0);
     this.poolTotal = total;
-    const winBets = mine.filter((b) => b.kind === "win");
-    const winTotal = winBets.reduce((s, b) => s + b.amount, 0);
-    this.div = winTotal > 0 ? (total * (1 - HOUSE_TAKE)) / winTotal : 0;
-    this.useOdds = this.game.state.bets.length > 0;
+    const onWinner = stakes[this.order[0]] ?? 0;
+    this.div = onWinner > 0 ? Math.round(((total * (1 - HOUSE_TAKE)) / onWinner) * 100) / 100 : 0;
     if (startAt > 0.2) {
       this.t = startAt;
       if (startAt > GATE_OPEN_T) {
@@ -165,40 +164,27 @@ export class RaceScreen implements Screen {
 
   // ---------- race setup ----------
 
+  /** Real win stakes on this race. The odds table is not part of the pool. */
+  private actualStakes(): number[] {
+    const local = new Array(8).fill(0);
+    for (const b of this.playerBets()) {
+      if (b.kind === "win" && b.a >= 0 && b.a < 8) local[b.a] += b.amount;
+    }
+    return local.map((n, i) => Math.max(n, feed.total(i)));
+  }
+
   private decideRace(): void {
     const st = this.game.state;
     const n = 8;
-    // Winner: 40% a player-backed horse (stake-weighted), else strength-weighted.
-    const backed = new Map<number, number>();
-    const source = st.bets.length
-      ? st.bets
-      : (this.game.net.state?.bets ?? []);
-    for (const b of source) {
-      if (b.kind === "forecast") {
-        backed.set(b.a, (backed.get(b.a) ?? 0) + b.amount * 0.6);
-        backed.set(b.b, (backed.get(b.b) ?? 0) + b.amount * 0.4);
-      } else {
-        backed.set(b.a, (backed.get(b.a) ?? 0) + b.amount);
-      }
+    const stakes = this.actualStakes();
+    // The host keeps the money. The horse with the least real money on it
+    // wins, so a payout — when there is one — never exceeds this race's bets.
+    let winner = 0;
+    for (let i = 1; i < n; i++) {
+      const less = stakes[i] < stakes[winner] - 0.001;
+      const tie = Math.abs(stakes[i] - stakes[winner]) <= 0.001 && st.strength[i] > st.strength[winner];
+      if (less || tie) winner = i;
     }
-    const wPick = (weights: number[]): number => {
-      let s = weights.reduce((a, b) => a + b, 0);
-      let r = Math.random() * s;
-      for (let i = 0; i < weights.length; i++) {
-        r -= weights[i];
-        if (r <= 0) return i;
-      }
-      return weights.length - 1;
-    };
-    let winner: number;
-    const backedTraps = [...backed.entries()].filter(([, v]) => v > 0);
-    if (backedTraps.length > 0 && Math.random() < WIN_OCCURRENCE) {
-      winner = wPick(backedTraps.map(([, v]) => v));
-      winner = backedTraps[winner][0];
-    } else {
-      winner = wPick(st.strength.map((s) => 0.15 + s));
-    }
-    // Remaining places by strength + noise.
     const rest = Array.from({ length: n }, (_, i) => i)
       .filter((i) => i !== winner)
       .sort((a, b) => st.strength[b] + Math.random() * 0.5 - (st.strength[a] + Math.random() * 0.5));
@@ -207,18 +193,20 @@ export class RaceScreen implements Screen {
     // (double the original ~19-26s window).
     const T0 = 38 + Math.random() * 8;
     const times = new Array<number>(n);
+    // The whole field finishes in a blanket. Gaps are only a few tenths,
+    // so the decided winner still hits the line first.
     this.order.forEach((trap, place) => {
-      times[trap] = T0 + (place === 0 ? 0 : 0.36 + place * 0.64 + Math.random() * 0.7);
+      const gap = place === 0 ? 0 : 0.22 * place + Math.random() * 0.1;
+      times[trap] = T0 + gap;
     });
     this.horses = Array.from({ length: n }, (_, trap) => ({
       trap,
       lane: trap % 8,
       T: times[trap],
-      // Small jostle: ±0.008..0.016 progress (≈20-40px on screen), 1-2
-      // surges per race. Derivative stays well below base speed (1/T),
-      // so motion is always forward but close horses can swap places.
-      wobAmp: 0.008 + Math.random() * 0.008,
-      wobK: 1 + Math.floor(Math.random() * 2),
+      // Every horse surges. The fight dies in the last tenth, then the
+      // real order runs to the line.
+      wobAmp: 0.026 + Math.random() * 0.016,
+      wobK: 2 + (trap % 2),
       wobPhase: Math.random() * Math.PI * 2,
       // Gallop cadence ~2.3-2.8 strides/s at full speed, faster horses
       // stride slightly quicker. Phase desynced per horse so the pack
@@ -243,12 +231,11 @@ export class RaceScreen implements Screen {
   private progress(h: Horse, t: number): number {
     const u = t / h.T;
     if (u <= 0) return 0;
-    // Let winners run ~12% past the line while the arrival panel slides in;
-    // the camera stays pinned at 1 so they pull ahead instead of freezing.
+    // Run a little past the line. The camera follows, so the dirt keeps
+    // moving instead of the horses galloping on a frozen background.
     if (u >= 1) return Math.min(1.12, u);
-    // Mid-race jostle, zero at start/finish so exact start grid and exact
-    // finish order/times are preserved.
-    const env = Math.sin(Math.PI * u);
+    // Full fight until the last tenth, then it shuts off so the finish order holds.
+    const env = Math.sin(Math.PI * Math.min(1, u / 0.9));
     return u + h.wobAmp * Math.sin(2 * Math.PI * h.wobK * u + h.wobPhase) * env;
   }
 
@@ -300,19 +287,25 @@ export class RaceScreen implements Screen {
       h.prevCyc = prev;
       this.gain[h.trap] = h.prog - this.lastProg[h.trap];
       this.lastProg[h.trap] = h.prog;
-      const crossed = prev < 0.33 && cyc >= 0.33;
-      if (crossed && this.t > GATE_OPEN_T && this.dust.length < 80) {
+      const landed = (mark: number) => prev < mark && cyc >= mark;
+      if ((landed(0.34) || landed(0.74)) && this.t > GATE_OPEN_T && this.dust.length < 160) {
         const s = LANE_S[h.lane];
         const px = PACK_X + (h.prog - this.cam) * SPREAD;
-        this.dust.push({
-          x: px - 88 * s,
-          y: LANE_Y[h.lane] + 2,
-          vx: -140 - Math.random() * 80,
-          vy: -8 - Math.random() * 10,
-          life: 0,
-          maxLife: 0.55 + Math.random() * 0.3,
-          size: (7 + Math.random() * 6) * s,
-        });
+        const y = LANE_Y[h.lane] + 2;
+        const fore = cyc < 0.5;
+        const n = fore ? 4 : 2;
+        for (let i = 0; i < n; i++) {
+          this.dust.push({
+            x: px - (fore ? 36 : 78) * s - i * 10 * s + (Math.random() - 0.5) * 10,
+            y: y + (Math.random() - 0.3) * 5,
+            vx: -70 - Math.random() * (fore ? 160 : 90),
+            vy: -4 - Math.random() * (fore ? 22 : 10),
+            life: 0,
+            maxLife: (fore ? 0.42 : 0.26) + Math.random() * 0.3,
+            size: ((fore ? 5 : 3) + Math.random() * 7) * s,
+            shade: Math.random(),
+          });
+        }
       }
     }
     // Age dust (real dt so slow-mo doesn't freeze the air).
@@ -332,7 +325,8 @@ export class RaceScreen implements Screen {
     // Keep the legacy tick advancing for any external readers.
     this.frameTick += sdt;
 
-    const leader = Math.max(...this.horses.map((h) => h.prog));
+    const front = this.horses.reduce((a, h) => (h.prog > a.prog ? h : a));
+    const leader = front.prog;
     // Broadcast speed readout: leader pace smoothed (typical gallop reads
     // high-50s; burst/slow-mo swing it either way).
     if (!this.finished) {
@@ -341,14 +335,18 @@ export class RaceScreen implements Screen {
       this.dispSpeed += (target - this.dispSpeed) * Math.min(1, dt * 3);
     }
     this.prevProg = leader;
-    // Camera tracks the capped leader (finish line pins at 1) with a tighter
-    // time constant than before so the pack doesn't swim around center.
-    const leaderCapped = Math.min(1, leader);
+    // Follow the leader through the run past the line. The old cap at 1
+    // froze the background while the horses were still galloping.
+    const lead = Math.min(1.12, leader);
     if (!this.snapped) {
-      this.cam = leaderCapped;
+      this.cam = lead;
+      this.ground = (lead / 1.12) * 186;
       this.snapped = true;
     } else {
-      this.cam += (leaderCapped - this.cam) * Math.min(1, dt * 2.2);
+      this.cam += (lead - this.cam) * Math.min(1, dt * 2.2);
+      const target = (this.cam / 1.12) * 186;
+      if (target > this.ground) this.ground = target;
+      if (this.dialogAt === 0 && target >= 185) this.ground += sdt * 16;
     }
 
     if (this.t > GATE_OPEN_T) {
@@ -359,8 +357,9 @@ export class RaceScreen implements Screen {
       }
     }
     const running = runT > 0.2 && this.horses.some((h) => h.prog < 1.02);
-    const pace = this.horses.reduce((a, h) => (h.prog > a.prog ? h : a)).strideFreq;
-    this.game.sound.setGallop(running, pace);
+    this.game.sound.setGallop(running, front.strideFreq);
+    if (this.finished || leader >= 1) this.game.sound.lead(-1);
+    else if (runT > 1.5) this.game.sound.lead(front.trap);
     const targetCheer = this.finished
       ? Math.max(0, 1 - Math.max(0, this.arrivalT - 0.6) / 2.4)
       : leader >= 0.75 ? Math.min(1, (leader - 0.75) / 0.25) : 0;
@@ -386,6 +385,7 @@ export class RaceScreen implements Screen {
       this.shake = Math.max(this.shake, 1.15);
       this.winClock = Math.max(0, this.t - GATE_OPEN_T);
       this.game.sound.photo();
+      this.game.sound.finishLine();
       this.slowmo = 0.5;
       this.slowT = 1.1;
     }
@@ -403,6 +403,11 @@ export class RaceScreen implements Screen {
         this.paidOut = true;
         this.payout = this.computePayout();
         this.game.state.money += this.payout;
+        const staked = this.playerBets()
+          .filter((b) => b.kind === "win")
+          .reduce((s, b) => s + b.amount, 0);
+        const kept = Math.round((staked - this.payout) * 100) / 100;
+        if (kept > 0) Auth.creditHouse(kept);
         this.game.net.clearBets();
       }
       if (this.arrivalT > 1.4 && this.dialogAt < 0.4) this.dialogAt += dt;
@@ -417,34 +422,30 @@ export class RaceScreen implements Screen {
   }
 
   private computePayout(): number {
-    const st = this.game.state;
     const o = this.order;
     const myBets = this.playerBets();
+    // Covering every horse for the same stake cannot pay.
+    if (this.sameStakeOnEveryHorse(myBets)) return 0;
+    // Multiple comes only from money bet on this race, never the odds matrix.
     let pay = 0;
-    const each = (fn: (b: BetCell) => number) => {
-      for (const b of myBets) pay += fn(b);
-    };
-    each((b) => {
-      const odds = st.odds;
-      if (b.kind === "win") {
-        if (b.a !== o[0]) return 0;
-        const price = this.useOdds ? st.odds.win[b.a] : this.div;
-        return b.amount * price;
-      }
-      if (b.kind === "place") return b.a === o[0] || b.a === o[1] ? b.amount * odds.place[b.a] : 0;
-      if (b.kind === "show") return b.a === o[0] || b.a === o[1] || b.a === o[2] ? b.amount * odds.show[b.a] : 0;
-      return b.a === o[0] && b.b === o[1] ? b.amount * odds.forecast[b.a][b.b] : 0;
-    });
-    return Math.round(pay * 100) / 100;
+    for (const b of myBets) {
+      if (b.kind !== "win" || b.a !== o[0]) continue;
+      pay += b.amount * this.div;
+    }
+    const staked = myBets.filter((b) => b.kind === "win").reduce((s, b) => s + b.amount, 0);
+    const cap = Math.round(staked * (1 - HOUSE_TAKE) * 100) / 100;
+    return Math.min(cap, Math.round(pay * 100) / 100);
   }
 
-  /** "POOL ₱1,000 • PAYS x1.80" transparency line for the result dialog. */
-  private poolLine(): string {
-    if (this.useOdds) {
-      const price = this.game.state.odds.win[this.order[0]] ?? 0;
-      return `WINNER PAYS x${price.toFixed(2)}`;
+  /** True when this player put the same win stake on all 8 horses. */
+  private sameStakeOnEveryHorse(bets: BetCell[]): boolean {
+    const stake = new Array(8).fill(0);
+    for (const b of bets) {
+      if (b.kind === "win" && b.a >= 0 && b.a < 8) stake[b.a] += b.amount;
     }
-    return `POOL ${fmtMoney(this.poolTotal)} • PAYS x${this.div.toFixed(2)}`;
+    if (stake.some((n) => n <= 0)) return false;
+    const first = Math.round(stake[0] * 100);
+    return stake.every((n) => Math.round(n * 100) === first);
   }
 
   // ---------- drawing ----------
@@ -457,7 +458,14 @@ export class RaceScreen implements Screen {
 
   private drawTrack(ctx: CanvasRenderingContext2D): void {
     // Slide from each bg_track frame into the next one, so the dirt scrolls.
-    const pos = Math.max(0, Math.min(186.999, this.cam * 187));
+    const span = 186;
+    let pos = this.ground;
+    if (pos > span) {
+      const from = 150;
+      const len = span - from;
+      pos = from + ((pos - span) % len);
+    }
+    pos = Math.max(0, Math.min(span - 0.001, pos));
     const i = Math.floor(pos);
     const frac = pos - i;
     const a = this.game.assets.trackFrame(i);
@@ -469,7 +477,7 @@ export class RaceScreen implements Screen {
     const step = (TRACK_SHIFT[i] ?? 64) * (1280 / a.naturalWidth);
     ctx.drawImage(a, -frac * step, 0, 1280, 876);
     if (frac > 0.001) {
-      const b = this.game.assets.trackFrame(i + 1);
+      const b = this.game.assets.trackFrame(Math.min(span, i + 1));
       if (b.complete && b.naturalWidth > 8) ctx.drawImage(b, (1 - frac) * step, 0, 1280, 876);
     }
   }
@@ -526,13 +534,20 @@ export class RaceScreen implements Screen {
     if (showDust) {
       for (const d of this.dust) {
         const k = d.life / d.maxLife;
+        const fade = Math.max(0, 1 - k);
+        const alpha = 0.55 * fade;
+        const rgb = d.shade > 0.62 ? "214,176,122" : d.shade > 0.3 ? "176,132,86" : "120,84,52";
         ctx.save();
         ctx.translate(d.x, d.y);
-        ctx.globalAlpha = 0.38 * (1 - k);
-        ctx.fillStyle = "#c4a27a";
-        ctx.scale(2.4 + k * 3.2, 0.38);
+        ctx.scale(3.1 + k * 4.4, 0.42 + k * 0.5);
+        const r = d.size * (0.85 + 0.7 * k);
+        const g = ctx.createRadialGradient(0, 0, r * 0.08, 0, 0, r);
+        g.addColorStop(0, `rgba(${rgb},${alpha})`);
+        g.addColorStop(0.55, `rgba(${rgb},${alpha * 0.45})`);
+        g.addColorStop(1, `rgba(${rgb},0)`);
+        ctx.fillStyle = g;
         ctx.beginPath();
-        ctx.arc(0, 0, d.size * (0.7 + 0.5 * k), 0, Math.PI * 2);
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       }
@@ -550,42 +565,41 @@ export class RaceScreen implements Screen {
       const i0 = A_CYCLE[fi];
       const i1 = A_CYCLE[(fi + 1) % A_CYCLE.length];
       const frac = f - Math.floor(f);
-      const blend = Math.max(0, Math.min(1, (frac - (1 - A_BLEND)) / A_BLEND));
       const s = 0.55 + (LANE_S[h.lane] - 0.55) * ease;
-      const ph = 2 * Math.PI * cyc;
-      const bob = Math.sin(ph + 0.9) * 2.0 * s;
+      // Equal-power fade keeps the horse solid while the pose moves
+      // through. A few pixels of travel makes the blend read as a stride,
+      // not a dissolve. Hooves stay on the dirt — the art already leaves the ground.
+      const outA = Math.cos(frac * Math.PI * 0.5);
+      const inA = Math.sin(frac * Math.PI * 0.5);
+      const ik = gallopPose(cyc);
+      const bob = -ik.lift * s;
+      const pitch = ik.pitch;
       const spot = this.placeHorse(h, ease, leader);
       if (!spot) continue;
-      const stretch = 1 + Math.min(0.07, Math.max(0, this.gain[h.trap] * 90));
-      const dw0 = sheet[i0][2] * spot.k * stretch;
-      const dh0 = sheet[i0][3] * spot.k;
-      const hx = spot.x + (stretch - 1) * dw0 * 0.22;
+      const hx = spot.x;
+      const travel = 4.5 * s;
       ctx.save();
+      ctx.imageSmoothingEnabled = true;
       ctx.filter = spot.blur;
-      ctx.fillStyle = `rgba(40, 24, 10, ${spot.k > 0.9 ? 0.32 : 0.18})`;
+      ctx.fillStyle = `rgba(40, 24, 10, ${spot.k > 0.9 ? 0.3 : 0.18})`;
       ctx.beginPath();
-      ctx.ellipse(hx, spot.y + 2, dw0 * 0.28, 5 + spot.k * 3, 0, 0, Math.PI * 2);
+      ctx.ellipse(hx, spot.y + 3, 44 * spot.k * (1 - Math.max(0, ik.lift) * 0.012), 4.2 + spot.k * 1.4, 0, 0, Math.PI * 2);
       ctx.fill();
-      const paint = (alpha: number, frame: number, dw: number, dh: number, dx: number) => {
+      const paint = (alpha: number, frame: number, dx: number) => {
+        if (alpha <= 0.01) return;
         const [fx, fy, fw, fh] = sheet[frame];
+        const dw = fw * spot.k;
+        const dh = fh * spot.k;
         ctx.save();
         ctx.globalAlpha = alpha;
-        const left = hx + dx;
-        if (spot.flip) {
-          ctx.translate(left, 0);
-          ctx.scale(-1, 1);
-          ctx.drawImage(A.img(`horse_${h.trap + 1}_a`), fx, fy, fw, fh, -dw / 2, spot.y - dh + bob, dw, dh);
-        } else {
-          ctx.drawImage(A.img(`horse_${h.trap + 1}_a`), fx, fy, fw, fh, left - dw / 2, spot.y - dh + bob, dw, dh);
-        }
+        ctx.translate(hx + dx, spot.y + bob);
+        ctx.rotate(spot.flip ? -pitch : pitch);
+        ctx.scale(spot.flip ? -1 : 1, 1);
+        ctx.drawImage(A.img(`horse_${h.trap + 1}_a`), fx, fy, fw, fh, -dw / 2, -dh, dw, dh);
         ctx.restore();
       };
-      paint(0.18, i0, dw0, dh0, spot.flip ? 12 * spot.k : -12 * spot.k);
-      paint(1, i0, dw0, dh0, 0);
-      if (blend > 0) {
-        const cell = sheet[i1];
-        paint(blend, i1, cell[2] * spot.k * stretch, cell[3] * spot.k, 0);
-      }
+      paint(outA, i0, -travel * frac);
+      paint(inA, i1, travel * (1 - frac));
       ctx.restore();
     }
   }
@@ -603,7 +617,7 @@ export class RaceScreen implements Screen {
     const x = stallX + (px - stallX) * ease;
     if (this.camId === "rail" || this.camId === "tight") {
       if (x < -450 || x > 1550) return null;
-      const blur = h.lane <= 1 ? "blur(1.15px)" : h.lane === 2 ? "blur(0.45px)" : "none";
+      const blur = "none";
       return { x, y: LANE_Y[h.lane], k: k0, flip: false, blur };
     }
     const gap = Math.max(0, leader - h.prog);
@@ -792,35 +806,39 @@ export class RaceScreen implements Screen {
   private drawResult(ctx: CanvasRenderingContext2D): void {
     if (this.dialogAt <= 0.3) return;
     const g = this.game;
-    const betted = this.playerBets().length > 0;
+    const bets = this.playerBets();
+    const betted = bets.length > 0;
     const win = betted && this.payout > 0;
+    const picked = new Set(bets.map((b) => b.a));
     drawDim(ctx);
     drawPanelBox(ctx, g, win ? "win" : "lose");
     if (win) {
-      text(ctx, "You Win", DLG_CX, 266, { font: FONT_IMPACT, size: 49, color: "#ffe14d" });
-      this.order.slice(0, 3).forEach((trap, i) => {
-        this.badge(ctx, trap, 660, 340 + i * 62, 52);
-      });
-      text(ctx, `WIN: ${fmtMoney(this.payout)}`, 640, 545, {
-        font: FONT_IMPACT, size: 34, color: "#ffffff",
-      });
-      text(ctx, this.poolLine(), 640, 578, {
-        font: FONT_MOTOR, size: 17, color: "#ffe14d",
+      text(ctx, "You Win", DLG_CX, 248, { font: FONT_IMPACT, size: 36, color: "#ffe14d" });
+      text(ctx, `WIN ${fmtMoney(this.payout)}`, DLG_CX, 278, {
+        font: FONT_MOTOR, size: 16, color: "#ffffff",
       });
     } else if (betted) {
-      text(ctx, "You Loose!", DLG_CX, 250, { font: FONT_IMPACT, size: 46, color: "#ffffff" });
-      text(ctx, "Your luck might be on the next race!", DLG_CX, 292, {
-        font: FONT_MOTOR, size: 16, color: "#ffd0d0",
-      });
-      this.order.slice(0, 3).forEach((trap, i) => {
-        this.badge(ctx, trap, [498, 631, 760][i], 400, 62);
+      text(ctx, "You Loose!", DLG_CX, 248, { font: FONT_IMPACT, size: 34, color: "#ffffff" });
+      text(ctx, "Your luck might be on the next race!", DLG_CX, 276, {
+        font: FONT_MOTOR, size: 14, color: "#ffd0d0",
       });
     } else {
-      text(ctx, "RACE OVER", DLG_CX, 266, { font: FONT_IMPACT, size: 44, color: "#ffffff" });
-      this.order.slice(0, 3).forEach((trap, i) => {
-        this.badge(ctx, trap, [498, 631, 760][i], 407, 62);
-      });
+      text(ctx, "RACE RESULTS", DLG_CX, 258, { font: FONT_IMPACT, size: 32, color: "#ffffff" });
     }
+    const place = ["1ST", "2ND", "3RD", "4TH", "5TH", "6TH", "7TH", "8TH"];
+    this.order.forEach((trap, i) => {
+      const col = i < 4 ? 0 : 1;
+      const row = i % 4;
+      const x = 438 + col * 236;
+      const y = 328 + row * 48;
+      this.badge(ctx, trap, x, y, 34);
+      text(ctx, place[i], x + 24, y - 8, {
+        font: FONT_MOTOR, size: 12, color: i === 0 ? "#ffe14d" : "#9fd0ff", align: "left",
+      });
+      text(ctx, TRAPS[trap].name, x + 24, y + 10, {
+        font: FONT_MOTOR, size: 13, color: picked.has(trap) ? "#ffe14d" : "#ffffff", align: "left",
+      });
+    });
     const skip = {
       x: 796, y: 514, w: 76, h: 76,
       onTap: () => {
@@ -858,7 +876,9 @@ export class RaceScreen implements Screen {
     const g = this.game;
     g.buttons.clear();
     const run = this.t > GATE_OPEN_T && !this.finished ? 1 : 0.25;
-    const bob = Math.sin(this.t * 13.5) * 2.2 * run;
+    const leadH = this.horses.reduce((a, h) => (h.prog > a.prog ? h : a));
+    const leadCyc = ((leadH.stride % 1) + 1) % 1;
+    const bob = Math.sin(leadCyc * Math.PI) * 1.4 * run;
     const mag = this.shake * 7;
     ctx.save();
     ctx.translate(Math.sin(this.t * 53) * mag, bob + Math.cos(this.t * 41) * mag * 0.55);

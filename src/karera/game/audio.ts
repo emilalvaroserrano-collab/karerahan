@@ -60,6 +60,8 @@ export class Sound {
     this.stopHorn();
     this.stopGallop();
     this.stopCheer();
+    this.stopCall();
+    this.stopFinish();
   }
 
   /** Gate clip. Caller already decided this race has not had its horn. */
@@ -126,6 +128,8 @@ export class Sound {
       this.stopAnnouncer();
       this.stopGallop();
       this.stopCheer();
+      this.stopCall();
+      this.stopFinish();
     } else {
       this.resume();
     }
@@ -175,10 +179,42 @@ export class Sound {
     this.play("photo.mp3");
   }
 
+  private finishEl: HTMLAudioElement | null = null;
+
+  /** One-shot finish bell and crowd hit when the winner reaches the line. */
+  finishLine(): void {
+    if (this.muted) return;
+    if (!this.finishEl) {
+      this.finishEl = new Audio("/sounds/finish.wav?v=2");
+      this.finishEl.preload = "auto";
+    }
+    const a = this.finishEl;
+    try {
+      a.loop = false;
+      a.volume = 1;
+      a.muted = false;
+      a.currentTime = 0;
+      void a.play();
+    } catch {
+      /* autoplay policy */
+    }
+  }
+
+  private stopFinish(): void {
+    const a = this.finishEl;
+    if (!a) return;
+    try {
+      if (!a.paused) a.pause();
+    } catch {
+      /* ignore */
+    }
+  }
+
   private actx: AudioContext | null = null;
   private cheerGain: GainNode | null = null;
   private cheerSrc: AudioBufferSourceNode | null = null;
   private cheerLevel = -1;
+  private cheerLoud = -1;
   private raceLive = false;
   private gallopOn = false;
   private gallopTimer: ReturnType<typeof setTimeout> | null = null;
@@ -276,7 +312,8 @@ export class Sound {
     filter.type = "lowpass";
     filter.frequency.value = 1400;
     const g = ctx.createGain();
-    g.gain.setValueAtTime(Math.min(0.5, gain * 0.48), time);
+    const duck = this.callTrap >= 0 ? 0.55 : 1;
+    g.gain.setValueAtTime(Math.min(0.5, gain * 0.48) * duck, time);
     src.connect(filter);
     filter.connect(g);
     g.connect(ctx.destination);
@@ -305,7 +342,10 @@ export class Sound {
   /** Crowd bed for the last quarter. Fades on the same source so it does not restart. */
   setCheer(level: number): void {
     const next = this.muted ? 0 : Math.max(0, Math.min(1, level));
-    if (Math.abs(next - this.cheerLevel) < 0.04 && (next > 0.02) === (this.cheerGain != null)) return;
+    const voice = this.callTrap >= 0 ? 0.28 : 1;
+    const loud = Math.min(0.033, next * 0.033) * voice;
+    if (this.cheerGain && Math.abs(loud - this.cheerLoud) < 0.001) return;
+    this.cheerLoud = loud;
     this.cheerLevel = next;
     if (this.muted || next <= 0.02) {
       if (!this.cheerGain) return;
@@ -345,16 +385,96 @@ export class Sound {
     }
     const now = ctx.currentTime;
     this.cheerGain.gain.cancelScheduledValues(now);
-    this.cheerGain.gain.linearRampToValueAtTime(Math.min(0.11, next * 0.11), now + 0.35);
+    this.cheerGain.gain.linearRampToValueAtTime(loud, now + 0.35);
   }
 
   private stopCheer(): void {
     this.cheerLevel = -1;
+    this.cheerLoud = -1;
     if (this.cheerSrc) {
       try { this.cheerSrc.stop(); } catch { /* already stopped */ }
     }
     this.cheerSrc = null;
     this.cheerGain = null;
+  }
+
+  /** Trap order matches TRAPS: Cagayan, Bicol, Cebu, Davao, Baguio, Abra, Bohol, Ilocos. */
+  private static readonly CALLS = [
+    "cagayan.wav",
+    "bicol.wav",
+    "cebu.wav",
+    "davao.wav",
+    "baguio.wav",
+    "abra.wav",
+    "bohol.wav",
+    "ilocos.wav",
+  ];
+  private calls: HTMLAudioElement[] = [];
+  private callTrap = -1;
+  private callsBoosted = false;
+
+  private ensureCalls(): void {
+    if (this.calls.length) return;
+    this.calls = Sound.CALLS.map((name) => {
+      const a = new Audio(`/sounds/${name}`);
+      a.preload = "auto";
+      a.loop = true;
+      a.volume = 1;
+      return a;
+    });
+  }
+
+  /** Lift the race call above the crowd. Media elements top out at 1, so boost past that. */
+  private boostCalls(): void {
+    if (this.callsBoosted || !this.calls.length) return;
+    const ctx = this.ctx();
+    if (!ctx) return;
+    this.callsBoosted = true;
+    for (const a of this.calls) {
+      const src = ctx.createMediaElementSource(a);
+      const g = ctx.createGain();
+      g.gain.value = 2.4;
+      src.connect(g);
+      g.connect(ctx.destination);
+    }
+  }
+
+  /**
+   * Race call for whoever is leading. Swaps immediately when the lead changes
+   * and keeps that horse's recording going until someone else takes over.
+   */
+  lead(trap: number): void {
+    this.ensureCalls();
+    this.boostCalls();
+    if (this.muted || !this.raceLive || trap < 0 || trap > 7) {
+      this.stopCall();
+      return;
+    }
+    if (trap === this.callTrap) {
+      const cur = this.calls[trap];
+      if (cur.paused) void cur.play().catch(() => {});
+      return;
+    }
+    this.stopCall();
+    const a = this.calls[trap];
+    try {
+      a.volume = 1;
+      a.muted = false;
+      a.currentTime = 0;
+    } catch {
+      /* not seekable yet */
+    }
+    this.callTrap = trap;
+    void a.play().catch(() => {});
+  }
+
+  private stopCall(): void {
+    for (const a of this.calls) {
+      if (!a.paused) {
+        try { a.pause(); } catch { /* ignore */ }
+      }
+    }
+    this.callTrap = -1;
   }
 
   soundtrack(on: boolean): void {

@@ -90,6 +90,13 @@ export class Game {
       : "translate(-50%, -50%)";
     this.canvas.width = Math.round(cw * dpr);
     this.canvas.height = Math.round(ch * dpr);
+    const ui = document.getElementById("stage-ui");
+    if (ui) {
+      ui.style.width = `${cw}px`;
+      ui.style.height = `${ch}px`;
+      ui.style.transform = st.transform;
+    }
+    document.documentElement.classList.toggle("stage-rotated", this.rotated);
     // The rotate-device overlay is obsolete: portrait now plays fullscreen
     // via auto-landscape.
     if (this.orientDiv) {

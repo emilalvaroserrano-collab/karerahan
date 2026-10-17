@@ -168,7 +168,7 @@ class RaceFeed {
     if (!host) {
       host = document.createElement("div");
       host.id = "race-toasts";
-      document.body.appendChild(host);
+      (document.getElementById("stage-ui") ?? document.body).appendChild(host);
     }
     host.replaceChildren(...this.notes.map((t) => {
       const el = document.createElement("div");

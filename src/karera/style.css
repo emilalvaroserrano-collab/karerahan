@@ -31,6 +31,22 @@ body {
   outline: none;
   -webkit-tap-highlight-color: transparent;
   -ms-touch-action: none;
+  z-index: 1;
+}
+
+/* Landscape stage shared with the canvas. On a portrait phone this box is
+   rotated with the game, so login, bets, and toasts are not left upright. */
+#stage-ui {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 40;
+  pointer-events: none;
+  container-type: size;
+}
+#stage-ui .overlay,
+#stage-ui .betbar {
+  pointer-events: auto;
 }
 
 /***************FONTS*******************/
@@ -57,7 +73,7 @@ body {
 
 /***************AUTH + ADMIN OVERLAYS*******************/
 .overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 50;
   display: flex;
@@ -70,8 +86,8 @@ body {
   display: none;
 }
 .overlay .card {
-  width: min(420px, 94vw);
-  max-height: 92vh;
+  width: min(420px, 94%);
+  max-height: 100%;
   overflow-y: auto;
   background: linear-gradient(180deg, #0d2242, #081630);
   border: 1px solid #2b4d86;
@@ -83,7 +99,7 @@ body {
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
 }
 .overlay .card.wide {
-  width: min(640px, 94vw);
+  width: min(920px, 96%);
 }
 .overlay h1 {
   font-size: 22px;
@@ -223,12 +239,12 @@ body {
 }
 
 .betbar {
-  position: fixed;
+  position: absolute;
   left: 50%;
   bottom: 12px;
   transform: translateX(-50%);
   z-index: 40;
-  width: min(560px, calc(100vw - 24px));
+  width: min(560px, calc(100% - 24px));
   background: linear-gradient(180deg, #0d2242, #081630);
   border: 1px solid #2b4d86;
   border-radius: 14px;
@@ -282,14 +298,14 @@ body {
 }
 
 #race-toasts {
-  position: fixed;
+  position: absolute;
   right: 16px;
   bottom: 108px;
   z-index: 45;
   display: flex;
   flex-direction: column-reverse;
   gap: 8px;
-  width: min(320px, calc(100vw - 32px));
+  width: min(320px, calc(100% - 32px));
   pointer-events: none;
 }
 .race-toast {
@@ -306,4 +322,45 @@ body {
   14% { opacity: 1; transform: none; }
   74% { opacity: 1; }
   100% { opacity: 0; transform: translateX(18px); }
+}
+
+/* Short landscape stage: forms sit in a row instead of a tall portrait stack. */
+@container (max-height: 520px) {
+  .overlay {
+    padding: 8px;
+  }
+  .overlay .card {
+    width: min(760px, 96%);
+    padding: 10px 14px;
+  }
+  #auth-overlay .card {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 8px;
+    align-items: center;
+    text-align: left;
+  }
+  #auth-overlay h1,
+  #auth-overlay .sub,
+  #auth-overlay .err {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+  #auth-overlay input,
+  #auth-overlay button {
+    margin: 0;
+  }
+  .overlay .card.wide {
+    width: min(1100px, 98%);
+  }
+  .overlay table.users {
+    font-size: 12px;
+  }
+  .betbar {
+    bottom: 8px;
+    padding: 6px 10px;
+  }
+  #race-toasts {
+    bottom: 76px;
+  }
 }
