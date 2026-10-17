@@ -1,6 +1,7 @@
 // Mute-aware sound effects. Audio starts muted like the original
 // (audio_enable_on_startup: false).
 import { Assets, SoundName } from "./assets";
+import { raceClock, BET_S } from "./schedule";
 
 export class Sound {
   muted = true;
@@ -90,12 +91,31 @@ export class Sound {
     }
   }
 
-  /** One-shot announcer voice-over for the race intro. */
+  /** One-shot announcer voice-over for the race intro.
+   *  Plays even when muted (silently) so currentTime tracks the window; when
+   *  the user unmutes mid-window they hear it at the matching position. */
   announcer(): void {
-    if (this.muted) return;
     const a = this.el("race_intro.mp3");
     if (!a) return;
-    this.startAnnouncer(a);
+    // Already playing: just sync mute state, don't restart.
+    if (!a.paused && !a.ended) {
+      a.muted = this.muted;
+      return;
+    }
+    const clock = raceClock();
+    const elapsed = clock.phase === "betting" ? Math.max(0, BET_S - clock.countdown) : BET_S;
+    const dur = Number.isFinite(a.duration) ? a.duration : Infinity;
+    const startAt = Math.max(0, Math.min(elapsed, dur));
+    try {
+      a.loop = false;
+      a.volume = 1;
+      a.muted = this.muted;
+      a.currentTime = startAt;
+      void a.play().catch(() => {});
+    } catch {
+      /* autoplay policy */
+    }
+    this.guardAnnouncer(a);
   }
 
   stopAnnouncer(): void {
@@ -111,13 +131,13 @@ export class Sound {
   }
 
   /**
-   * True while the intro voice-over is still mid-playback. The race start
-   * waits on this so the TTS call is never cut off; muted, finished, or
-   * never-started audio returns false and never delays the gates.
+   * True while the intro voice-over is still mid-playback. Works even when
+   * muted (the audio plays silently to track the window), so the race waits
+   * for the TTS to finish regardless of mute state.
    */
   announcerPlaying(): boolean {
     const a = this.el("race_intro.mp3");
-    if (this.muted || !a) return false;
+    if (!a) return false;
     return !a.paused && !a.ended;
   }
 
@@ -126,19 +146,6 @@ export class Sound {
     const a = this.el("race_intro.mp3");
     if (!a || !Number.isFinite(a.duration)) return 0;
     return Math.max(0, a.duration - a.currentTime);
-  }
-
-  private startAnnouncer(a: HTMLAudioElement): void {
-    try {
-      a.loop = false;
-      a.volume = 1;
-      a.muted = false;
-      a.currentTime = 0;
-      void a.play();
-    } catch {
-      /* autoplay policy */
-    }
-    this.guardAnnouncer(a);
   }
 
   private annGuard: ReturnType<typeof setTimeout> | null = null;
@@ -177,7 +184,13 @@ export class Sound {
     if (m) {
       this.soundtrack(false);
       this.stopHorn();
-      this.stopAnnouncer();
+      // In bet mode keep the announcer playing (silently) so currentTime
+      // keeps tracking the window; just mute the element.
+      if (this.musicMode !== "bet") this.stopAnnouncer();
+      else {
+        const a = this.el("race_intro.mp3");
+        if (a) a.muted = true;
+      }
       this.stopGallop();
       this.stopCheer();
       this.stopCall();
@@ -199,10 +212,13 @@ export class Sound {
     }
     this.soundtrack(true);
     if (this.musicMode !== "bet") return;
-    // Heal a never-started betting announcer (its enter() play may have
-    // predated the first user gesture). Never restarts mid/late playback.
     const a = this.el("race_intro.mp3");
-    if (a && a.paused && !a.ended && a.currentTime < 1) this.startAnnouncer(a);
+    if (!a) return;
+    a.muted = false; // unmute on resume
+    if (a.paused && !a.ended) {
+      // Heal: start at the correct window position, not from 0.
+      this.announcer();
+    }
   }
 
   /** Hard guarantee: BGM can never overlap the race bed. Cheap; the race
