@@ -51,6 +51,10 @@ const SHELL = `
     <button id="ad-close" class="ghost" type="button">CLOSE</button>
   </div>
 </div>
+</div>
+<div id="intro-overlay">
+  <video id="intro-video" src="/standby-video.mp4" autoplay muted playsinline preload="auto"></video>
+  <button id="intro-skip" type="button" aria-label="Skip intro">SKIP</button>
 </div>`;
 
 function Home() {
@@ -61,6 +65,27 @@ function Home() {
     if (!host || host.dataset.booted === "1") return;
     host.dataset.booted = "1";
     host.innerHTML = SHELL;
+
+    // Intro video: muted autoplay (browser policy) on page load. Dismiss on
+    // END, SKIP, or load error; a timer guarantees the game is never blocked.
+    const intro = host.querySelector<HTMLDivElement>("#intro-overlay");
+    const vid = host.querySelector<HTMLVideoElement>("#intro-video");
+    if (intro && vid) {
+      let closed = false;
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        vid.pause();
+        intro.classList.add("closing");
+        window.setTimeout(() => intro.remove(), 450);
+      };
+      host.querySelector("#intro-skip")?.addEventListener("click", close);
+      vid.addEventListener("ended", close);
+      vid.addEventListener("error", close);
+      vid.play().catch(close);
+      window.setTimeout(close, 25000);
+    }
+
     void import("../karera/main").then((mod) => mod.startGame());
   }, []);
 

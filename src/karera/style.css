@@ -364,3 +364,46 @@ body {
     bottom: 76px;
   }
 }
+
+/***************INTRO VIDEO*******************/
+/* Page-load intro: full-bleed black stage, one autoplaying video, SKIP
+   pinned to the top-right of the frame (safe-area aware). */
+#intro-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #000;
+  overflow: hidden;
+  transition: opacity 0.45s ease;
+}
+#intro-overlay.closing {
+  opacity: 0;
+  pointer-events: none;
+}
+#intro-overlay video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+#intro-skip {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  right: max(14px, env(safe-area-inset-right));
+  z-index: 2;
+  padding: 11px 20px;
+  font: 700 14px/1 Arial, sans-serif;
+  letter-spacing: 1.4px;
+  color: #1a1a1a;
+  background: #f2c200;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+#intro-skip:hover {
+  filter: brightness(1.08);
+}
+#intro-skip:active {
+  transform: scale(0.96);
+}

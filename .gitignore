@@ -2,3 +2,7 @@ node_modules
 .vercel
 dist
 *.log
+
+# Local secrets - never commit (platform injects env on deploy)
+.env
+.env.local
