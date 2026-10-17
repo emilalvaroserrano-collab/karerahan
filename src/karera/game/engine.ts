@@ -72,12 +72,14 @@ export class Game {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     // Portrait (phone held upright): auto-landscape — CSS-rotate the
     // landscape game 90° so it fills the screen instead of a tiny strip.
-    // Landscape/desktop: contain-fit the whole 1280x876 stage so the HUD is
-    // never cropped (scale-to-width cut the top/bottom on short screens).
+    // Landscape/desktop: fill the full viewport width (no side letterbox bars).
+    // Portrait (rotated): keep contain-fit so the HUD is never cropped.
     this.rotated = vh > vw;
     const aw = this.rotated ? vh : vw;
     const ah = this.rotated ? vw : vh;
-    this.scale = Math.min(aw / DESIGN_W, ah / DESIGN_H);
+    this.scale = this.rotated
+      ? Math.min(aw / DESIGN_W, ah / DESIGN_H)
+      : aw / DESIGN_W;
     const cw = Math.max(1, Math.round(DESIGN_W * this.scale));
     const ch = Math.max(1, Math.round(DESIGN_H * this.scale));
     const st = this.canvas.style;
