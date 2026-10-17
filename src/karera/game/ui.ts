@@ -38,6 +38,27 @@ export function text(
   ctx.restore();
 }
 
+/** Draw text shrunk (never stretched) until it fits `maxW`. Keeps long
+ *  names and big amounts inside the panel slots instead of spilling over
+ *  the art next to them. */
+export function fitText(
+  ctx: CanvasRenderingContext2D,
+  str: string,
+  x: number,
+  y: number,
+  o: TextOpts,
+  maxW: number,
+  minSize = 9,
+): void {
+  let size = o.size;
+  ctx.save();
+  ctx.font = `${size}px ${o.font}`;
+  const w = ctx.measureText(str).width;
+  ctx.restore();
+  if (w > maxW && w > 0) size = Math.max(minSize, Math.floor((size * maxW) / w));
+  text(ctx, str, x, y, { ...o, size });
+}
+
 export function drawCentered(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement,

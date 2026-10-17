@@ -12,7 +12,7 @@ import {
 } from "../constants";
 import { Game, Screen } from "../engine";
 
-import { drawCentered, drawStateHalf, text } from "../ui";
+import { drawCentered, drawStateHalf, fitText, text } from "../ui";
 import { DLG_CX, drawPanelBox, drawDim } from "./dialogs";
 import { HORSE_A_FRAMES, THUMB_FRAME } from "../horseFrames";
 import { BetScreen } from "./bet";
@@ -812,45 +812,69 @@ export class RaceScreen implements Screen {
     const picked = new Set(bets.map((b) => b.a));
     drawDim(ctx);
     drawPanelBox(ctx, g, win ? "win" : "lose");
-    // Both panels carry baked art the content has to fit around.
-    // win  — "1st/2nd/3rd" label rows down the right half, a two-slot black
-    //        box under them: names go beside the labels, amounts in the slots.
-    // lose — three column headers across the top, open space above and below.
+    // Both panels carry baked art the content has to fit around. All the
+    // anchors below are measured off the panel bitmaps (DLG_BOX 385,210 →
+    // 515x393), so content sits in the empty space the art leaves and never
+    // on top of it. Every string is auto-fitted to its slot, so a 7-figure
+    // payout shrinks instead of spilling onto the skip button.
+    //
+    // win  — right half: "1st/2nd/3rd" labels (x 661-716) with the horse
+    //        badge + name to their right, then a two-slot black box
+    //        (x 657-791, y 490-594, divider y 542) for payout and pool.
+    //        Left half is a photo with no text baked in — the title goes
+    //        there so the right column never gets crowded.
+    // lose — three column headers (x 538/645/752) across the top, open space
+    //        above and below for the title and the podium block.
     const top3 = this.order.slice(0, 3);
     if (win) {
-      text(ctx, "You Win", 772, 227, { font: FONT_IMPACT, size: 28, color: "#ffe14d" });
+      text(ctx, "You Win", 514, 300, {
+        font: FONT_IMPACT, size: 34, color: "#ffe14d",
+        stroke: "#08142c", strokeWidth: 5,
+      });
       const rowY = [261.5, 355, 449.5];
       top3.forEach((trap, i) => {
         const y = rowY[i];
         this.badge(ctx, trap, 738, y, 32);
-        text(ctx, TRAPS[trap].name, 758, y, {
+        fitText(ctx, TRAPS[trap].name, 760, y, {
           font: FONT_MOTOR, size: 16, color: picked.has(trap) ? "#ffe14d" : "#ffffff", align: "left",
-        });
+        }, 130);
       });
-      text(ctx, `WIN ${fmtMoney(this.payout)}`, 724, 515, {
+      // Black-box slots: 134px wide, so cap the text at 118 to keep the
+      // padding even and clear of the skip button at x 796.
+      fitText(ctx, `WIN ${fmtMoney(this.payout)}`, 724, 516, {
         font: FONT_IMPACT, size: 20, color: "#ffe14d",
-      });
-      text(ctx, `POOL ${fmtMoney(this.poolTotal)}`, 724, 569, {
+      }, 118);
+      fitText(ctx, `POOL ${fmtMoney(this.poolTotal)}`, 724, 568, {
         font: FONT_MOTOR, size: 14, color: "#9fd0ff",
-      });
+      }, 118);
     } else {
       if (betted) {
-        text(ctx, "You Lose!", DLG_CX, 252, { font: FONT_IMPACT, size: 36, color: "#ffffff" });
-        text(ctx, "Your luck might be on the next race!", DLG_CX, 284, {
+        fitText(ctx, "You Lose!", DLG_CX, 252, { font: FONT_IMPACT, size: 36, color: "#ffffff" }, 430);
+        fitText(ctx, "Your luck might be on the next race!", DLG_CX, 284, {
           font: FONT_MOTOR, size: 14, color: "#ffd0d0",
-        });
+        }, 430);
       } else {
-        text(ctx, "RACE RESULTS", DLG_CX, 254, { font: FONT_IMPACT, size: 32, color: "#ffffff" });
+        fitText(ctx, "RACE RESULTS", DLG_CX, 254, { font: FONT_IMPACT, size: 32, color: "#ffffff" }, 430);
       }
+      // Column pitch is ~107px, so each name line gets ~100px before it
+      // would reach into the neighbouring column.
       const colX = [538.9, 645.7, 752.6];
       top3.forEach((trap, i) => {
         const x = colX[i];
         this.badge(ctx, trap, x, 390, 46);
         const words = TRAPS[trap].name.split(" ");
         const color = picked.has(trap) ? "#ffe14d" : "#ffffff";
-        text(ctx, words[0], x, 434, { font: FONT_MOTOR, size: 15, color });
-        text(ctx, words.slice(1).join(" "), x, 456, { font: FONT_MOTOR, size: 15, color });
+        fitText(ctx, words[0], x, 434, { font: FONT_MOTOR, size: 15, color }, 100);
+        fitText(ctx, words.slice(1).join(" "), x, 456, { font: FONT_MOTOR, size: 15, color }, 100);
       });
+      // Fills the open band under the podium and says what the race cost.
+      // Bounded well left of the skip button (x 796) so the two never touch.
+      const staked = bets.filter((b) => b.kind === "win").reduce((s, b) => s + b.amount, 0);
+      if (staked > 0) {
+        fitText(ctx, `YOUR STAKE ${fmtMoney(staked)}`, DLG_CX, 512, {
+          font: FONT_MOTOR, size: 16, color: "#9fd0ff",
+        }, 300);
+      }
     }
     const skip = {
       x: 796, y: 514, w: 76, h: 76,

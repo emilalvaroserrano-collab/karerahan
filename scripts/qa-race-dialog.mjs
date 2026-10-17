@@ -24,25 +24,25 @@ await page.evaluate(() => {
 await page.waitForFunction(() => window.__game.assets.progress >= 1, null, { timeout: 120000 });
 await page.waitForTimeout(500);
 
-const cases = ["nobets", "lose", "win"];
+const cases = ["nobets", "lose", "win", "win-big"];
 for (const mode of cases) {
   await page.evaluate(async (mode) => {
     const g = window.__game;
     const { RaceScreen } = await import("/src/karera/game/screens/race.ts");
     g.state.phone = "09123456789";
-    g.state.money = 1000;
+    g.state.money = 1000000;
     g.state.bets = [];
     const s = new RaceScreen(g, 60);
     const winner = s.order[0];
-    if (mode === "win") {
+    if (mode === "win" || mode === "win-big") {
       g.state.bets = [{ kind: "win", a: winner, b: 0, amount: 100 }];
-      s.payout = 61.25;
-      s.poolTotal = 340.5;
+      s.payout = mode === "win-big" ? 1234567.89 : 61.25;
+      s.poolTotal = mode === "win-big" ? 9876543.21 : 340.5;
     } else if (mode === "lose") {
       const loser = s.order[3];
       g.state.bets = [{ kind: "win", a: loser, b: 0, amount: 100 }];
       s.payout = 0;
-      s.poolTotal = 340.5;
+      s.poolTotal = 9876543.21;
     }
     s.dialogAt = 1;
     s.arrivalT = 1;
