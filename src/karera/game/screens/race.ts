@@ -812,33 +812,46 @@ export class RaceScreen implements Screen {
     const picked = new Set(bets.map((b) => b.a));
     drawDim(ctx);
     drawPanelBox(ctx, g, win ? "win" : "lose");
+    // Both panels carry baked art the content has to fit around.
+    // win  — "1st/2nd/3rd" label rows down the right half, a two-slot black
+    //        box under them: names go beside the labels, amounts in the slots.
+    // lose — three column headers across the top, open space above and below.
+    const top3 = this.order.slice(0, 3);
     if (win) {
-      text(ctx, "You Win", DLG_CX, 248, { font: FONT_IMPACT, size: 36, color: "#ffe14d" });
-      text(ctx, `WIN ${fmtMoney(this.payout)}`, DLG_CX, 278, {
-        font: FONT_MOTOR, size: 16, color: "#ffffff",
+      text(ctx, "You Win", 772, 227, { font: FONT_IMPACT, size: 28, color: "#ffe14d" });
+      const rowY = [261.5, 355, 449.5];
+      top3.forEach((trap, i) => {
+        const y = rowY[i];
+        this.badge(ctx, trap, 738, y, 32);
+        text(ctx, TRAPS[trap].name, 758, y, {
+          font: FONT_MOTOR, size: 16, color: picked.has(trap) ? "#ffe14d" : "#ffffff", align: "left",
+        });
       });
-    } else if (betted) {
-      text(ctx, "You Loose!", DLG_CX, 248, { font: FONT_IMPACT, size: 34, color: "#ffffff" });
-      text(ctx, "Your luck might be on the next race!", DLG_CX, 276, {
-        font: FONT_MOTOR, size: 14, color: "#ffd0d0",
+      text(ctx, `WIN ${fmtMoney(this.payout)}`, 724, 515, {
+        font: FONT_IMPACT, size: 20, color: "#ffe14d",
+      });
+      text(ctx, `POOL ${fmtMoney(this.poolTotal)}`, 724, 569, {
+        font: FONT_MOTOR, size: 14, color: "#9fd0ff",
       });
     } else {
-      text(ctx, "RACE RESULTS", DLG_CX, 258, { font: FONT_IMPACT, size: 32, color: "#ffffff" });
+      if (betted) {
+        text(ctx, "You Lose!", DLG_CX, 252, { font: FONT_IMPACT, size: 36, color: "#ffffff" });
+        text(ctx, "Your luck might be on the next race!", DLG_CX, 284, {
+          font: FONT_MOTOR, size: 14, color: "#ffd0d0",
+        });
+      } else {
+        text(ctx, "RACE RESULTS", DLG_CX, 254, { font: FONT_IMPACT, size: 32, color: "#ffffff" });
+      }
+      const colX = [538.9, 645.7, 752.6];
+      top3.forEach((trap, i) => {
+        const x = colX[i];
+        this.badge(ctx, trap, x, 390, 46);
+        const words = TRAPS[trap].name.split(" ");
+        const color = picked.has(trap) ? "#ffe14d" : "#ffffff";
+        text(ctx, words[0], x, 434, { font: FONT_MOTOR, size: 15, color });
+        text(ctx, words.slice(1).join(" "), x, 456, { font: FONT_MOTOR, size: 15, color });
+      });
     }
-    const place = ["1ST", "2ND", "3RD", "4TH", "5TH", "6TH", "7TH", "8TH"];
-    this.order.forEach((trap, i) => {
-      const col = i < 4 ? 0 : 1;
-      const row = i % 4;
-      const x = 438 + col * 236;
-      const y = 328 + row * 48;
-      this.badge(ctx, trap, x, y, 34);
-      text(ctx, place[i], x + 24, y - 8, {
-        font: FONT_MOTOR, size: 12, color: i === 0 ? "#ffe14d" : "#9fd0ff", align: "left",
-      });
-      text(ctx, TRAPS[trap].name, x + 24, y + 10, {
-        font: FONT_MOTOR, size: 13, color: picked.has(trap) ? "#ffe14d" : "#ffffff", align: "left",
-      });
-    });
     const skip = {
       x: 796, y: 514, w: 76, h: 76,
       onTap: () => {
