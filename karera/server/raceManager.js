@@ -1,5 +1,5 @@
 const TRAPS = 8;
-const COUNTDOWN_S = 60;
+const COUNTDOWN_S = 80;
 const HOUSE_TAKE = 0.1;
 
 export class RaceManager {

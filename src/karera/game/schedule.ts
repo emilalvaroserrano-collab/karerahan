@@ -1,7 +1,7 @@
 // One shared race for every player, driven by the clock so nobody
 // starts a private race. Betting is open, then the same race runs.
 
-export const BET_S = 60;
+export const BET_S = 80;
 export const RACE_S = 70;
 export const CYCLE_S = BET_S + RACE_S;
 const EPOCH = Date.UTC(2026, 0, 1) / 1000;
