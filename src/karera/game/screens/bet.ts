@@ -346,16 +346,29 @@ export class BetScreen implements Screen {
         font: FONT_MOTOR, size: 16, color: "#9fd0ff",
       });
     } else {
-      text(ctx, "RACE STARTING", 700, 58, { font: FONT_DIGI, size: 26, color: "#ffe14d" });
-      // Gates wait on the intro voice-over, so say what the hold is for and
-      // how much of the call is left.
+      // During the hold, the race is NOT starting yet — the intro voice-over
+      // owns the call. Show the hold prominently (centered, so it stays
+      // visible even on screens where the top/bottom edges are cropped) and
+      // never the "RACE STARTING" label, which would imply the gates are
+      // already opening.
       if (this.announcing) {
         const left = Math.ceil(g.sound.announcerRemaining());
-        text(ctx, left > 0
-          ? `INTRO ANNOUNCER ON AIR  ·  GATES OPEN IN ${left}s`
-          : "INTRO ANNOUNCER ON AIR  ·  GATES OPEN AFTER THE CALL", 700, 86, {
-          font: FONT_MOTOR, size: 15, color: "#9fd0ff",
+        text(ctx, "INTRO ANNOUNCER ON AIR", 640, 360, {
+          font: FONT_IMPACT, size: 46, color: "#f2c200",
+          stroke: "#000000", strokeWidth: 5,
         });
+        text(ctx, left > 0
+          ? `GATES OPEN IN ${left}s`
+          : "GATES OPEN AFTER THE CALL", 640, 412, {
+          font: FONT_DIGI, size: 30, color: "#ffffff",
+          stroke: "#000000", strokeWidth: 4,
+        });
+        text(ctx, "THE RACE STARTS WHEN THE CALL ENDS", 640, 456, {
+          font: FONT_MOTOR, size: 18, color: "#9fd0ff",
+          stroke: "#000000", strokeWidth: 3,
+        });
+      } else {
+        text(ctx, "RACE STARTING", 640, 400, { font: FONT_DIGI, size: 36, color: "#ffe14d" });
       }
     }
 
