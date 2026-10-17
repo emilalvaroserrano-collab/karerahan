@@ -20,7 +20,7 @@
       "height": 844,
       "status": 200,
       "title": "Karera",
-      "hasCanvas": false,
+      "hasCanvas": true,
       "bodyTextLen": 0,
       "bodyTextHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "bodyTextPrefix": "",
@@ -30,10 +30,7 @@
       "screenshot": "/workspace/screenshots/app-builder-built-mobile.png"
     }
   },
-  "brandWarnings": [
-    "BRAND WARNING: this looks like a game/canvas app but /workspace/public/og.jpg is missing. Games and visually rich apps must ship a custom 1200x630 share card built from the app's own art — the default og.grok.me placeholder card is not acceptable for them. You are not done: open /workspace/.grok/skills/og/SKILL.md and finish the brand-asset pass.",
-    "BRAND WARNING: this looks like a game/canvas app but src/lib/og/site.json is missing \"type\": \"x:game\". X uses og:type=x:game to present the unfurl as a game card — set it in /workspace/src/lib/og/site.json per /workspace/.grok/skills/og/SKILL.md. Do not invent x:type or overload twitter:card as the game signal."
-  ],
+  "brandWarnings": [],
   "authWarnings": [],
   "verdictFile": "/workspace/screenshots/app-builder-built.json"
 }
