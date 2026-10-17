@@ -44,6 +44,11 @@ export class BetScreen implements Screen {
   private selected = -1;
   private lock = 0;
   private locking = false;
+  /** True once the betting window has shut: this screen now owns the walk-up
+   *  to the race and must wait for the intro voice-over to finish. */
+  private heldForIntro = false;
+  /** True while that voice-over is actually still playing. */
+  private announcing = false;
   private onConfirm: (() => void) | null = null;
   private onAmount: (() => void) | null = null;
   private pulse = 0;
@@ -58,7 +63,9 @@ export class BetScreen implements Screen {
     this.warn = null;
     this.selected = -1;
     this.lock = 0;
-    this.locking = false;
+    this.locking = raceClock().phase === "betting";
+    this.heldForIntro = false;
+    this.announcing = false;
     this.ensureBar();
     el("bet-bar")?.classList.remove("hidden");
     const amt = el<HTMLInputElement>("bet-amt");
@@ -96,13 +103,25 @@ export class BetScreen implements Screen {
       return;
     }
     const clock = raceClock();
-    if (clock.raceNumber !== g.state.raceNumber) {
+    const racing = clock.phase === "racing";
+    // Betting is done: the intro voice-over owns the walk-up, and it is
+    // allowed to run past the next window's opening bell (the call is longer
+    // than one betting window, and a player who unmutes late hears all of
+    // it). Only a roll-over while betting is still open means this screen's
+    // race is gone.
+    if (racing) this.heldForIntro = true;
+    if (!this.heldForIntro && clock.raceNumber !== g.state.raceNumber) {
       g.show(new MenuScreen(g));
       return;
     }
-    this.locking = clock.phase === "betting";
+    this.locking = !racing;
     this.lock = clock.countdown;
-    if (clock.phase === "racing") g.show(new RaceScreen(g));
+    if (this.heldForIntro) {
+      this.announcing = g.sound.announcerPlaying();
+      // Gates stay shut until the TTS call has played out in full.
+      if (this.announcing) return;
+      g.show(new RaceScreen(g));
+    }
   }
 
   private ensureBar(): void {
@@ -175,6 +194,11 @@ export class BetScreen implements Screen {
   private place(trap: number, amount: number): boolean {
     const g = this.game;
     const amt = Math.round(amount * 100) / 100;
+    if (!this.locking) {
+      // The window shut; the track is waiting on the intro call.
+      this.warn = "Betting is closed for this race.";
+      return false;
+    }
     if (this.selected < 0) this.selected = trap;
     if (!Number.isFinite(amt) || amt < MIN_BET) {
       this.warn = `Minimum bet is ${CURRENCY}${MIN_BET}.`;
@@ -323,6 +347,16 @@ export class BetScreen implements Screen {
       });
     } else {
       text(ctx, "RACE STARTING", 700, 58, { font: FONT_DIGI, size: 26, color: "#ffe14d" });
+      // Gates wait on the intro voice-over, so say what the hold is for and
+      // how much of the call is left.
+      if (this.announcing) {
+        const left = Math.ceil(g.sound.announcerRemaining());
+        text(ctx, left > 0
+          ? `INTRO ANNOUNCER ON AIR  ·  GATES OPEN IN ${left}s`
+          : "INTRO ANNOUNCER ON AIR  ·  GATES OPEN AFTER THE CALL", 700, 86, {
+          font: FONT_MOTOR, size: 15, color: "#9fd0ff",
+        });
+      }
     }
 
     const clear = {

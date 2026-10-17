@@ -95,6 +95,40 @@ export class Sound {
     if (this.muted) return;
     const a = this.el("race_intro.mp3");
     if (!a) return;
+    this.startAnnouncer(a);
+  }
+
+  stopAnnouncer(): void {
+    this.clearAnnouncerGuard();
+    const a = this.el("race_intro.mp3");
+    if (a && !a.paused) {
+      try {
+        a.pause();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  /**
+   * True while the intro voice-over is still mid-playback. The race start
+   * waits on this so the TTS call is never cut off; muted, finished, or
+   * never-started audio returns false and never delays the gates.
+   */
+  announcerPlaying(): boolean {
+    const a = this.el("race_intro.mp3");
+    if (this.muted || !a) return false;
+    return !a.paused && !a.ended;
+  }
+
+  /** Seconds of intro left, for the "gates open in …" hold line. 0 if unknown. */
+  announcerRemaining(): number {
+    const a = this.el("race_intro.mp3");
+    if (!a || !Number.isFinite(a.duration)) return 0;
+    return Math.max(0, a.duration - a.currentTime);
+  }
+
+  private startAnnouncer(a: HTMLAudioElement): void {
     try {
       a.loop = false;
       a.volume = 1;
@@ -104,16 +138,34 @@ export class Sound {
     } catch {
       /* autoplay policy */
     }
+    this.guardAnnouncer(a);
   }
 
-  stopAnnouncer(): void {
-    const a = this.el("race_intro.mp3");
-    if (a && !a.paused) {
+  private annGuard: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * A stalled stream would keep the element "playing" forever and the race
+   * would never start: pause it once its own length plus slack has gone by.
+   * Cleared on a natural end, an explicit stop, or a mute.
+   */
+  private guardAnnouncer(a: HTMLAudioElement): void {
+    this.clearAnnouncerGuard();
+    a.addEventListener("ended", () => this.clearAnnouncerGuard(), { once: true });
+    const left = Number.isFinite(a.duration) && a.duration > 1 ? a.duration - a.currentTime : 95;
+    this.annGuard = setTimeout(() => {
+      this.annGuard = null;
       try {
-        a.pause();
+        if (!a.paused && !a.ended) a.pause();
       } catch {
         /* ignore */
       }
+    }, (left + 8) * 1000);
+  }
+
+  private clearAnnouncerGuard(): void {
+    if (this.annGuard != null) {
+      clearTimeout(this.annGuard);
+      this.annGuard = null;
     }
   }
 
@@ -150,16 +202,7 @@ export class Sound {
     // Heal a never-started betting announcer (its enter() play may have
     // predated the first user gesture). Never restarts mid/late playback.
     const a = this.el("race_intro.mp3");
-    if (a && a.paused && !a.ended && a.currentTime < 1) {
-      try {
-        a.loop = false;
-        a.volume = 1;
-        a.muted = false;
-        void a.play();
-      } catch {
-        /* autoplay policy */
-      }
-    }
+    if (a && a.paused && !a.ended && a.currentTime < 1) this.startAnnouncer(a);
   }
 
   /** Hard guarantee: BGM can never overlap the race bed. Cheap; the race
