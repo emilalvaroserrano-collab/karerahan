@@ -477,8 +477,9 @@ export class RaceScreen implements Screen {
   }
 
   private drawTrack(ctx: CanvasRenderingContext2D): void {
-    // Original-style flipbook through bg_track frames (no crossfade), filling
-    // the race view without distortion.
+    // Original-style flipbook through bg_track frames (no crossfade).
+    // Frames fill the design width at 0,0 (original scaled bg_track to canvas
+    // width); the HUD overlays the bottom of the stage.
     const span = 186;
     let pos = this.ground;
     if (pos > span) {
@@ -494,10 +495,10 @@ export class RaceScreen implements Screen {
       ctx.fillRect(0, 0, 1280, 876);
       return;
     }
-    const scale = Math.max(1280 / a.naturalWidth, 876 / a.naturalHeight);
-    const dw = a.naturalWidth * scale;
-    const dh = a.naturalHeight * scale;
-    ctx.drawImage(a, (1280 - dw) / 2, (876 - dh) / 2, dw, dh);
+    ctx.fillStyle = "#6a4428";
+    ctx.fillRect(0, 0, 1280, 876);
+    const scale = 1280 / a.naturalWidth;
+    ctx.drawImage(a, 0, 0, 1280, a.naturalHeight * scale);
   }
 
   private drawGates(ctx: CanvasRenderingContext2D): void {
@@ -938,9 +939,6 @@ export class RaceScreen implements Screen {
     ctx.save();
     ctx.translate(Math.sin(this.t * 53) * mag, bob + Math.cos(this.t * 41) * mag * 0.55);
     this.drawTrack(ctx);
-    const shade = 0.04 + 0.1 * (0.5 + 0.5 * Math.sin(this.cam * 21));
-    ctx.fillStyle = `rgba(6, 14, 8, ${shade})`;
-    ctx.fillRect(0, 0, 1280, 470);
     this.drawGates(ctx);
     this.drawHorses(ctx);
     ctx.restore();
