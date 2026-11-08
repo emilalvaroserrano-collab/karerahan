@@ -21,7 +21,6 @@ import { WaitScreen } from "./wait";
 import { mulberry32, raceClock } from "../schedule";
 import { feed } from "../feed";
 import { Auth } from "../auth";
-import { TRACK_SHIFT } from "../trackShift";
 import { gallopPose } from "../gallopIk";
 
 export const HUD_COL_X = [184, 309, 433, 557, 683, 808, 931, 1053];
@@ -478,7 +477,8 @@ export class RaceScreen implements Screen {
   }
 
   private drawTrack(ctx: CanvasRenderingContext2D): void {
-    // Slide from each bg_track frame into the next one, so the dirt scrolls.
+    // Original view: flipbook through bg_track frames (no crossfade), each
+    // filling the design width, placed at the top of the stage.
     const span = 186;
     let pos = this.ground;
     if (pos > span) {
@@ -488,25 +488,14 @@ export class RaceScreen implements Screen {
     }
     pos = Math.max(0, Math.min(span - 0.001, pos));
     const i = Math.floor(pos);
-    const frac = pos - i;
     const a = this.game.assets.trackFrame(i);
     if (!a.complete || a.naturalWidth < 8) {
       ctx.fillStyle = "#6a4428";
       ctx.fillRect(0, 0, 1280, 876);
       return;
     }
-    // Cover-fit the original track art to the design space (no stretching/distortion).
-    const scale = Math.max(1280 / a.naturalWidth, 876 / a.naturalHeight);
-    const dw = a.naturalWidth * scale;
-    const dh = a.naturalHeight * scale;
-    const dx = (1280 - dw) / 2;
-    const dy = (876 - dh) / 2;
-    const step = (TRACK_SHIFT[i] ?? 64) * scale;
-    ctx.drawImage(a, dx - frac * step, dy, dw, dh);
-    if (frac > 0.001) {
-      const b = this.game.assets.trackFrame(Math.min(span, i + 1));
-      if (b.complete && b.naturalWidth > 8) ctx.drawImage(b, dx + (1 - frac) * step, dy, dw, dh);
-    }
+    const scale = 1280 / a.naturalWidth;
+    ctx.drawImage(a, 0, 0, 1280, a.naturalHeight * scale);
   }
 
   private drawGates(ctx: CanvasRenderingContext2D): void {
