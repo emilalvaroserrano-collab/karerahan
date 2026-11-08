@@ -477,8 +477,8 @@ export class RaceScreen implements Screen {
   }
 
   private drawTrack(ctx: CanvasRenderingContext2D): void {
-    // Original view: flipbook through bg_track frames (no crossfade), each
-    // filling the design width, placed at the top of the stage.
+    // Original-style flipbook through bg_track frames (no crossfade), filling
+    // the race view without distortion.
     const span = 186;
     let pos = this.ground;
     if (pos > span) {
@@ -494,8 +494,10 @@ export class RaceScreen implements Screen {
       ctx.fillRect(0, 0, 1280, 876);
       return;
     }
-    const scale = 1280 / a.naturalWidth;
-    ctx.drawImage(a, 0, 0, 1280, a.naturalHeight * scale);
+    const scale = Math.max(1280 / a.naturalWidth, 876 / a.naturalHeight);
+    const dw = a.naturalWidth * scale;
+    const dh = a.naturalHeight * scale;
+    ctx.drawImage(a, (1280 - dw) / 2, (876 - dh) / 2, dw, dh);
   }
 
   private drawGates(ctx: CanvasRenderingContext2D): void {
