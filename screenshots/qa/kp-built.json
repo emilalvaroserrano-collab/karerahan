@@ -1,0 +1,40 @@
+{
+  "url": "http://127.0.0.1:8081/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Karera",
+      "hasCanvas": true,
+      "bodyTextLen": 4,
+      "bodyTextHash": "6ad446059a8bb8d8722e1420110f2784368a2ad5a56384d516c602530e5af256",
+      "bodyTextPrefix": "SKIP",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/Users/masterdee/racekare/karerahan/screenshots/qa/kp-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Karera",
+      "hasCanvas": true,
+      "bodyTextLen": 4,
+      "bodyTextHash": "6ad446059a8bb8d8722e1420110f2784368a2ad5a56384d516c602530e5af256",
+      "bodyTextPrefix": "SKIP",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/Users/masterdee/racekare/karerahan/screenshots/qa/kp-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/Users/masterdee/racekare/karerahan/screenshots/qa/kp-built.json",
+  "divergesFromBaseline": true,
+  "baselineReasons": [
+    "baseline unreadable: ENOENT"
+  ]
+}

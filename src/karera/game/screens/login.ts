@@ -43,10 +43,11 @@ export class LoginScreen implements Screen {
     const err = el("lo-err");
     const btn = el<HTMLButtonElement>("lo-btn");
     if (btn) btn.textContent = "...";
+    if (err) err.textContent = "";
     try {
       const u = await Auth.verify(phone, pass);
       if (!u) {
-        if (err) err.textContent = "Wrong phone number or password.";
+        if (err) err.textContent = "Wrong credentials.";
         return;
       }
       Auth.setSession(u.phone);
@@ -55,6 +56,17 @@ export class LoginScreen implements Screen {
       this.game.state.newRace();
       this.game.net.auth(u.phone);
       this.game.show(new MenuScreen(this.game));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Login failed.";
+      // Friendlier Firebase messages
+      const friendly = /invalid-credential|wrong-password|user-not-found/i.test(msg)
+        ? "Wrong email/password, or account not found in Firebase."
+        : /email-already-in-use/i.test(msg)
+          ? "Email already in use."
+          : /network-request-failed/i.test(msg)
+            ? "Network error. Check your connection."
+            : msg;
+      if (err) err.textContent = friendly;
     } finally {
       if (btn) btn.textContent = "ENTER PADDOCK";
     }

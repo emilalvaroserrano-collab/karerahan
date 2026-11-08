@@ -19,7 +19,9 @@ export const supabase: SupabaseClient | null = hasSupabase
     })
   : null;
 
-/** Public Storage origin for sprites/ and sounds/. Empty when Supabase is off. */
-export const assetBase = hasSupabase
-  ? `${url.replace(/\/$/, "")}/storage/v1/object/public/game-assets/`
-  : "";
+const forceLocalAssets = (import.meta.env.VITE_LOCAL_ASSETS as string | undefined) === "1";
+/** Public Storage origin for sprites/ and sounds/. Empty uses local /sprites,/sounds. */
+export const assetBase =
+  !forceLocalAssets && hasSupabase
+    ? `${url.replace(/\/$/, "")}/storage/v1/object/public/game-assets/`
+    : "";

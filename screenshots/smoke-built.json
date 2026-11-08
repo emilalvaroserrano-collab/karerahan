@@ -1,0 +1,38 @@
+{
+  "url": "http://127.0.0.1:8081/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Karera",
+      "hasCanvas": true,
+      "bodyTextLen": 52,
+      "bodyTextHash": "63bd71bb4e4ba7b074e3d7ad1b1051cfb6b8a9468158823b260f7b77755637db",
+      "bodyTextPrefix": "KARERA LOGIN Phone number and password ENTER PADDOCK",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/Users/masterdee/racekare/karerahan/screenshots/smoke-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Karera",
+      "hasCanvas": true,
+      "bodyTextLen": 52,
+      "bodyTextHash": "63bd71bb4e4ba7b074e3d7ad1b1051cfb6b8a9468158823b260f7b77755637db",
+      "bodyTextPrefix": "KARERA LOGIN Phone number and password ENTER PADDOCK",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/Users/masterdee/racekare/karerahan/screenshots/smoke-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/Users/masterdee/racekare/karerahan/screenshots/smoke-built.json",
+  "divergesFromBaseline": false,
+  "baselineReasons": []
+}

@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Karera",
+      "hasCanvas": true,
+      "bodyTextLen": 57,
+      "bodyTextHash": "d2225c64e678c6e71ff587bdcc3ed5dc4ce6702d4baa07b27b8c5059a5eabb5c",
+      "bodyTextPrefix": "KARERA LOGIN Phone number and password ENTER PADDOCK SKIP",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/Users/masterdee/racekare/karerahan/screenshots/qa/kp-dev.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Karera",
+      "hasCanvas": true,
+      "bodyTextLen": 57,
+      "bodyTextHash": "d2225c64e678c6e71ff587bdcc3ed5dc4ce6702d4baa07b27b8c5059a5eabb5c",
+      "bodyTextPrefix": "KARERA LOGIN Phone number and password ENTER PADDOCK SKIP",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/Users/masterdee/racekare/karerahan/screenshots/qa/kp-dev-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/Users/masterdee/racekare/karerahan/screenshots/qa/kp-dev.json"
+}

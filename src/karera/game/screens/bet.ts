@@ -180,7 +180,25 @@ export class BetScreen implements Screen {
     this.refreshBar();
   }
 
-  /** Deduct `amount` from the signed-in load and record a win bet on `trap`. */
+  /** Race pool strip in the header: money, players, and entries. With an
+   *  empty board it falls back to the "bet or watch" hint. */
+  private poolLine(ctx: CanvasRenderingContext2D, hint: boolean): void {
+    const pool = feed.racePool();
+    if (pool.bets > 0) {
+      const players = `${pool.players} ${pool.players === 1 ? "PLAYER" : "PLAYERS"}`;
+      const bets = `${pool.bets} ${pool.bets === 1 ? "BET" : "BETS"}`;
+      text(ctx, `POOL ${fmtMoney(pool.total)}   ·   ${players}   ·   ${bets}`, 700, 80, {
+        font: FONT_MOTOR, size: 15, color: "#9fd0ff",
+      });
+      return;
+    }
+    if (hint) {
+      text(ctx, "BET OR JUST WATCH", 700, 80, {
+        font: FONT_MOTOR, size: 16, color: "#9fd0ff",
+      });
+    }
+  }
+
   /** Multiple from money actually on the board this race, not the odds table. */
   private liveMultiple(trap: number): number {
     const g = this.game;
@@ -191,6 +209,7 @@ export class BetScreen implements Screen {
     return Math.round(((total * (1 - HOUSE_TAKE)) / on) * 100) / 100;
   }
 
+  /** Deduct `amount` from the signed-in load and record a win bet on `trap`. */
   private place(trap: number, amount: number): boolean {
     const g = this.game;
     const amt = Math.round(amount * 100) / 100;
@@ -293,8 +312,15 @@ export class BetScreen implements Screen {
     text(ctx, staked > 0 ? `YOU ${fmtMoney(staked)}` : "NO BET", card.x + 150, card.y + 92, {
       font: FONT_IMPACT, size: 18, color: staked > 0 ? "#ffe14d" : "#6d88b0", align: "left",
     });
-    text(ctx, `TOTAL ${fmtMoney(this.shownTotal[trap])}`, card.x + card.w - 100, card.y + 108, {
-      font: FONT_DIGI, size: 15, color: "#ffffff",
+    // Live pool on this horse, tucked under the quick-bet buttons: the money
+    // staked, and how many players put it there.
+    const players = feed.players(trap);
+    text(ctx, `TOTAL ${fmtMoney(this.shownTotal[trap])}`, card.x + card.w - 12, card.y + 102, {
+      font: FONT_DIGI, size: 15, color: "#ffffff", align: "right",
+    });
+    text(ctx, players > 0 ? `${players} ${players === 1 ? "PLAYER" : "PLAYERS"}` : "NO BETS YET",
+      card.x + card.w - 12, card.y + 116, {
+      font: FONT_MOTOR, size: 11, color: players > 0 ? "#9fd0ff" : "#6d88b0", align: "right",
     });
 
     QUICK.forEach((v, i) => {
@@ -339,12 +365,10 @@ export class BetScreen implements Screen {
     if (this.locking) {
       const s = Math.max(0, Math.ceil(this.lock));
       const label = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-      text(ctx, `RACE ${g.state.raceNumber}  IN ${label}   ONLINE ${feed.online}`, 760, 48, {
-        font: FONT_DIGI, size: 22, color: "#ffe14d",
+      text(ctx, `RACE ${g.state.raceNumber}  IN ${label}   ONLINE ${feed.online}`, 700, 48, {
+        font: FONT_DIGI, size: 20, color: "#ffe14d",
       });
-      text(ctx, "BET OR JUST WATCH", 700, 78, {
-        font: FONT_MOTOR, size: 16, color: "#9fd0ff",
-      });
+      this.poolLine(ctx, true);
     } else {
       // During the hold, the race is NOT starting yet — the intro voice-over
       // owns the call. Show the hold prominently (centered, so it stays
@@ -370,6 +394,7 @@ export class BetScreen implements Screen {
       } else {
         text(ctx, "RACE STARTING", 640, 400, { font: FONT_DIGI, size: 36, color: "#ffe14d" });
       }
+      this.poolLine(ctx, false);
     }
 
     const clear = {

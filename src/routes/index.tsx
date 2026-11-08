@@ -13,8 +13,8 @@ const SHELL = `
 <div id="auth-overlay" class="overlay hidden">
   <div class="card">
     <h1>KARERA LOGIN</h1>
-    <p class="sub">Phone number and password</p>
-    <input id="lo-phone" inputmode="tel" maxlength="11" placeholder="09XXXXXXXXX" autocomplete="username" />
+    <p class="sub">Email, phone, or admin — with password</p>
+    <input id="lo-phone" inputmode="email" maxlength="120" placeholder="Email or phone (09XXXXXXXXX)" autocomplete="username" />
     <input id="lo-pass" type="password" placeholder="Password" autocomplete="current-password" />
     <div id="lo-err" class="err"></div>
     <button id="lo-btn" type="button">ENTER PADDOCK</button>

@@ -50,9 +50,9 @@ create index if not exists bets_race_id_idx on public.bets (race_id);
 
 insert into public.players (phone, pass_hash, role, balance)
 values
-  ('admin', encode(digest('karera::admin123', 'sha256'), 'hex'), 'admin', 0),
+  ('admin', encode(digest('karera::admin', 'sha256'), 'hex'), 'admin', 0),
   ('09123456789', encode(digest('karera::1234', 'sha256'), 'hex'), 'player', 1000)
-on conflict (phone) do nothing;
+on conflict (phone) do update set pass_hash = excluded.pass_hash, role = excluded.role;
 
 alter table public.players enable row level security;
 alter table public.house enable row level security;

@@ -23,7 +23,7 @@ const SESSION_KEY = "pm_session_v1";
 const TOKEN_KEY = "pm_token_v1";
 
 const ADMIN_PHONE = "admin";
-const ADMIN_PASS = "admin123";
+const ADMIN_PASS = "admin";
 const DEMO_PHONE = "09123456789";
 const DEMO_PASS = "1234";
 const DEMO_BALANCE = 1000;

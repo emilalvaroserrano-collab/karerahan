@@ -30,6 +30,7 @@ const HUD_NAME_Y = 758;
 
 const CAGE_W = [292, 271, 254, 235, 214, 189, 162, 131, 95];
 const GATE_OPEN_T = 0.9;
+const round2 = (v: number): number => Math.round(v * 100) / 100;
 /** Screen x the pack is anchored to (leaves track ahead, like the original). */
 const PACK_X = 500;
 /** Pixels of screen separation per unit of race progress. */
@@ -111,8 +112,11 @@ export class RaceScreen implements Screen {
   private dust: Dust[] = [];
   /** Locked pool numbers (house take already credited at lock). */
   private poolTotal = 0;
-  /** Final WIN multiple from this race's actual stakes only. */
+  /** Final WIN dividend from this race's pool: net pool / money on winner. */
   private div = 0;
+  /** This player's saved settle-up figures, kept for the payout log. */
+  private myStake = 0;
+  private myWinnerStake = 0;
   /** Broadcast HUD: frozen winning clock + smoothed speed readout. */
   private winClock = 0;
   private prevProg = 0;
@@ -140,12 +144,8 @@ export class RaceScreen implements Screen {
     } finally {
       Math.random = prev;
     }
-    // Lock the pool from this player's bets on the shared race.
-    const stakes = this.actualStakes();
-    const total = stakes.reduce((s, n) => s + n, 0);
-    this.poolTotal = total;
-    const onWinner = stakes[this.order[0]] ?? 0;
-    this.div = onWinner > 0 ? Math.round(((total * (1 - HOUSE_TAKE)) / onWinner) * 100) / 100 : 0;
+    // The pool is locked when the race pays out (the betting window has been
+    // shut for the whole run by then, so the board cannot move under us).
     if (startAt > 0.2) {
       this.t = startAt;
       if (startAt > GATE_OPEN_T) {
@@ -403,11 +403,19 @@ export class RaceScreen implements Screen {
         this.paidOut = true;
         this.payout = this.computePayout();
         this.game.state.money += this.payout;
-        const staked = this.playerBets()
-          .filter((b) => b.kind === "win")
-          .reduce((s, b) => s + b.amount, 0);
-        const kept = Math.round((staked - this.payout) * 100) / 100;
+        // The bangka keeps whatever this player staked and did not win back.
+        const kept = round2(this.myStake - this.payout);
         if (kept > 0) Auth.creditHouse(kept);
+        // Durable record of the settlement: stake, dividend, payout, pool.
+        feed.logPayout(
+          this.game.state.raceNumber,
+          this.order[0],
+          this.myStake,
+          this.myWinnerStake,
+          this.div,
+          this.payout,
+          this.poolTotal,
+        );
         this.game.net.clearBets();
       }
       if (this.arrivalT > 1.4 && this.dialogAt < 0.4) this.dialogAt += dt;
@@ -421,20 +429,42 @@ export class RaceScreen implements Screen {
     }
   }
 
+  /** Final pool numbers, taken when the race settles. */
+  private lockPool(): void {
+    const stakes = this.actualStakes();
+    this.poolTotal = round2(stakes.reduce((s, n) => s + n, 0));
+    const onWinner = stakes[this.order[0]] ?? 0;
+    this.div = onWinner > 0 ? round2((this.poolTotal * (1 - HOUSE_TAKE)) / onWinner) : 0;
+  }
+
+  /**
+   * Pay this player's share of the race pool. Pari-mutuel, from money
+   * actually bet on this race (never the odds table):
+   *
+   *   dividend = raceTotal × (1 − HOUSE_TAKE) / winnerTotal
+   *   payout   = saved stake on the winner × dividend
+   *
+   * so a lightly backed winner pays more and the payout can never take more
+   * than the net pool.
+   */
   private computePayout(): number {
     const o = this.order;
     const myBets = this.playerBets();
+    this.lockPool();
+    // This player's stakes: their own slip plus the rows saved for their
+    // phone in the race feed (the same money seen from two sides, so take
+    // the larger; the feed side survives a reload).
+    const phone = this.game.state.phone ?? "";
+    const winBets = myBets.filter((b) => b.kind === "win");
+    const localStake = winBets.reduce((s, b) => s + b.amount, 0);
+    const localOnWinner = winBets.filter((b) => b.a === o[0]).reduce((s, b) => s + b.amount, 0);
+    this.myStake = round2(Math.max(localStake, phone ? feed.playerRaceStake(phone) : 0));
+    this.myWinnerStake = round2(Math.max(localOnWinner, phone ? feed.playerStake(o[0], phone) : 0));
     // Covering every horse for the same stake cannot pay.
     if (this.sameStakeOnEveryHorse(myBets)) return 0;
-    // Multiple comes only from money bet on this race, never the odds matrix.
-    let pay = 0;
-    for (const b of myBets) {
-      if (b.kind !== "win" || b.a !== o[0]) continue;
-      pay += b.amount * this.div;
-    }
-    const staked = myBets.filter((b) => b.kind === "win").reduce((s, b) => s + b.amount, 0);
-    const cap = Math.round(staked * (1 - HOUSE_TAKE) * 100) / 100;
-    return Math.min(cap, Math.round(pay * 100) / 100);
+    if (this.myWinnerStake <= 0 || this.div <= 0) return 0;
+    const net = round2(this.poolTotal * (1 - HOUSE_TAKE));
+    return Math.min(net, round2(this.myWinnerStake * this.div));
   }
 
   /** True when this player put the same win stake on all 8 horses. */

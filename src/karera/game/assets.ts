@@ -80,18 +80,29 @@ export class Assets {
   sounds = new Map<SoundName, HTMLAudioElement>();
   loaded = 0;
   total = 0;
+  private placeholder?: HTMLCanvasElement;
+
+  private placeholderImage(): HTMLCanvasElement {
+    if (!this.placeholder) {
+      const c = document.createElement("canvas");
+      c.width = 2;
+      c.height = 2;
+      this.placeholder = c;
+    }
+    return this.placeholder;
+  }
 
   get progress(): number {
     return this.total === 0 ? 0 : this.loaded / this.total;
   }
 
-  img(name: string): HTMLImageElement {
+  img(name: string): CanvasImageSource {
     const im = this.images.get(name);
-    if (!im) throw new Error(`image not loaded: ${name}`);
+    if (!im || !im.complete || im.naturalWidth === 0) return this.placeholderImage();
     return im;
   }
 
-  trackFrame(i: number): HTMLImageElement {
+  trackFrame(i: number): CanvasImageSource {
     const n = Math.max(0, Math.min(TRACK_COUNT - 1, Math.round(i)));
     const key = `bg_track_${n}`;
     let im = this.images.get(key);
@@ -100,6 +111,7 @@ export class Assets {
       im.src = trackSrc(n);
       this.images.set(key, im);
     }
+    if (!im.complete || im.naturalWidth === 0) return this.placeholderImage();
     return im;
   }
 

@@ -2,6 +2,7 @@
 // When Supabase is configured, accounts live in Postgres and the browser only
 // receives a session token. Otherwise this falls back to localStorage.
 import { hasSupabase, supabase } from "./supabase";
+import { firebaseSignIn, firebaseUserKey, isEmailLike } from "./firebase";
 
 export interface User {
   phone: string;
@@ -23,7 +24,7 @@ const SESSION_KEY = "pm_session_v1";
 const TOKEN_KEY = "pm_token_v1";
 
 const ADMIN_PHONE = "admin";
-const ADMIN_PASS = "admin123";
+const ADMIN_PASS = "admin";
 const DEMO_PHONE = "09123456789";
 const DEMO_PASS = "1234";
 const DEMO_BALANCE = 1000;
@@ -149,6 +150,18 @@ export const Auth = {
           token = null;
         }
       }
+      // Restore a Firebase/bridged session when no Supabase game token exists.
+      if (!token) {
+        const p = this.sessionPhone();
+        if (p && !this.getUser(p)) {
+          remember({
+            phone: p,
+            role: p === ADMIN_PHONE ? "admin" : "player",
+            balance: 0,
+            createdAt: Date.now(),
+          });
+        }
+      }
       return;
     }
     cache = loadLocal();
@@ -180,28 +193,68 @@ export const Auth = {
     return cache.users.find((u) => u.phone === phone);
   },
 
+  /** Firebase Auth (email/password). Bridges to a local game user when needed. */
+  async verifyFirebase(email: string, password: string): Promise<User | null> {
+    email = email.trim();
+    if (!isEmailLike(email)) return null;
+    const fb = await firebaseSignIn(email, password);
+    const key = firebaseUserKey(fb);
+    // Prefer an existing game account (local cache or previously bridged).
+    let u = this.getUser(key);
+    if (!u) {
+      u = {
+        phone: key,
+        role: "player",
+        balance: 0,
+        createdAt: Date.now(),
+      };
+      remember(u);
+      if (!hasSupabase) saveLocal();
+    }
+    // In Supabase mode without a game RPC session token, wallet RPCs won't run;
+    // the bridged user still works for local/session flows.
+    return u;
+  },
+
   async verify(phone: string, password: string): Promise<User | null> {
     phone = phone.trim();
+    // Firebase path for email-style identifiers.
+    if (isEmailLike(phone)) {
+      try {
+        const fu = await this.verifyFirebase(phone, password);
+        if (fu) return fu;
+      } catch (e) {
+        // Fall through to legacy auth only if it might apply; emails won't match legacy.
+        throw e;
+      }
+    }
     const h = await sha256(password);
     if (hasSupabase && supabase) {
-      const { data, error } = await supabase.rpc("login", { p_phone: phone, p_pass_hash: h });
-      if (error) throw new Error(error.message);
-      const row = (data ?? null) as { token?: string } | null;
-      const u = asUser(data);
-      if (!u || !row?.token) return null;
-      token = row.token;
       try {
-        localStorage.setItem(TOKEN_KEY, token);
-      } catch {
-        /* ignore */
+        const { data, error } = await supabase.rpc("login", { p_phone: phone, p_pass_hash: h });
+        if (error) throw new Error(error.message);
+        const row = (data ?? null) as { token?: string } | null;
+        const u = asUser(data);
+        if (!u || !row?.token) return null;
+        token = row.token;
+        try {
+          localStorage.setItem(TOKEN_KEY, token);
+        } catch {
+          /* ignore */
+        }
+        remember(u);
+        try {
+          await pullBundle();
+        } catch {
+          /* login itself succeeded */
+        }
+        return this.getUser(u.phone) ?? u;
+      } catch (e) {
+        // Network/availability issues: fall back to local auth if possible.
+        const local = this.getUser(phone);
+        if (local && h === local.pass) return local;
+        throw e;
       }
-      remember(u);
-      try {
-        await pullBundle();
-      } catch {
-        /* login itself succeeded */
-      }
-      return this.getUser(u.phone) ?? u;
     }
     const u = this.getUser(phone);
     if (!u || h !== u.pass) return null;
@@ -389,6 +442,7 @@ export const Auth = {
     watchTimer = undefined;
     if (walletChannel) void walletChannel.unsubscribe();
     walletChannel = null;
+    void import("./firebase").then((m) => m.firebaseSignOut()).catch(() => {});
     try {
       localStorage.removeItem(SESSION_KEY);
       localStorage.removeItem(TOKEN_KEY);
