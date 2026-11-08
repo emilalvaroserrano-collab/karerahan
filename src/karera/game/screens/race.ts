@@ -365,17 +365,8 @@ export class RaceScreen implements Screen {
       : leader >= 0.75 ? Math.min(1, (leader - 0.75) / 0.25) : 0;
     this.cheer += (targetCheer - this.cheer) * Math.min(1, dt * 1.6);
     this.game.sound.setCheer(this.cheer);
-    if (this.finished || leader >= 0.88) this.camId = "tight";
-    else if (this.camManual > 0) this.camManual = Math.max(0, this.camManual - dt);
-    else if (this.t < GATE_OPEN_T + 2.4) this.camId = "rail";
-    else {
-      this.camHold -= dt;
-      if (this.camHold <= 0) {
-        const i = CAM_CYCLE.indexOf(this.camId);
-        this.camId = CAM_CYCLE[(i + 1) % CAM_CYCLE.length];
-        this.camHold = 8;
-      }
-    }
+    // Original side/rail camera view throughout the race.
+    this.camId = "rail";
 
     // Photo finish on first crosser: brief slow-mo like the original, then
     // release. Race still lands in the ~38-52s window.
@@ -504,11 +495,17 @@ export class RaceScreen implements Screen {
       ctx.fillRect(0, 0, 1280, 876);
       return;
     }
-    const step = (TRACK_SHIFT[i] ?? 64) * (1280 / a.naturalWidth);
-    ctx.drawImage(a, -frac * step, 0, 1280, 876);
+    // Cover-fit the original track art to the design space (no stretching/distortion).
+    const scale = Math.max(1280 / a.naturalWidth, 876 / a.naturalHeight);
+    const dw = a.naturalWidth * scale;
+    const dh = a.naturalHeight * scale;
+    const dx = (1280 - dw) / 2;
+    const dy = (876 - dh) / 2;
+    const step = (TRACK_SHIFT[i] ?? 64) * scale;
+    ctx.drawImage(a, dx - frac * step, dy, dw, dh);
     if (frac > 0.001) {
       const b = this.game.assets.trackFrame(Math.min(span, i + 1));
-      if (b.complete && b.naturalWidth > 8) ctx.drawImage(b, (1 - frac) * step, 0, 1280, 876);
+      if (b.complete && b.naturalWidth > 8) ctx.drawImage(b, dx + (1 - frac) * step, dy, dw, dh);
     }
   }
 
@@ -949,28 +946,12 @@ export class RaceScreen implements Screen {
     const mag = this.shake * 7;
     ctx.save();
     ctx.translate(Math.sin(this.t * 53) * mag, bob + Math.cos(this.t * 41) * mag * 0.55);
-    if (this.camId === "tight") {
-      ctx.translate(640, 460);
-      ctx.scale(1.42, 1.42);
-      ctx.translate(-560, -470);
-    } else if (this.camId === "chase") {
-      ctx.translate(640, 500);
-      ctx.scale(1.06, 1.06);
-      ctx.translate(-700, -500);
-    }
     this.drawTrack(ctx);
     const shade = 0.04 + 0.1 * (0.5 + 0.5 * Math.sin(this.cam * 21));
     ctx.fillStyle = `rgba(6, 14, 8, ${shade})`;
     ctx.fillRect(0, 0, 1280, 470);
     this.drawGates(ctx);
     this.drawHorses(ctx);
-    if (this.camId === "head" || this.camId === "chase") {
-      const lens = ctx.createRadialGradient(640, 430, 160, 640, 430, 780);
-      lens.addColorStop(0, "rgba(0,0,0,0)");
-      lens.addColorStop(1, "rgba(0,0,0,0.42)");
-      ctx.fillStyle = lens;
-      ctx.fillRect(0, 0, 1280, 876);
-    }
     ctx.restore();
     this.drawHUD(ctx);
     this.drawCamButton(ctx);
