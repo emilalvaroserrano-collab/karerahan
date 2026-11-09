@@ -337,15 +337,16 @@ export class RaceScreen implements Screen {
     // Follow the leader through the run past the line. The old cap at 1
     // froze the background while the horses were still galloping.
     const lead = Math.min(1.12, leader);
+    const span = 396;
     if (!this.snapped) {
       this.cam = lead;
-      this.ground = (lead / 1.12) * 186;
+      this.ground = (lead / 1.12) * span;
       this.snapped = true;
     } else {
       this.cam += (lead - this.cam) * Math.min(1, dt * 2.2);
-      const target = (this.cam / 1.12) * 186;
+      const target = (this.cam / 1.12) * span;
       if (target > this.ground) this.ground = target;
-      if (this.dialogAt === 0 && target >= 185) this.ground += sdt * 16;
+      if (this.dialogAt === 0 && target >= span - 1) this.ground = Math.min(span, this.ground + sdt * 16);
     }
 
     if (this.t > GATE_OPEN_T) {
@@ -480,13 +481,9 @@ export class RaceScreen implements Screen {
     // Original-style flipbook through bg_track frames (no crossfade).
     // Frames fill the design width at 0,0 (original scaled bg_track to canvas
     // width); the HUD overlays the bottom of the stage.
-    const span = 186;
+    const span = 396;
     let pos = this.ground;
-    if (pos > span) {
-      const from = 150;
-      const len = span - from;
-      pos = from + ((pos - span) % len);
-    }
+    if (pos > span) pos = span;
     pos = Math.max(0, Math.min(span - 0.001, pos));
     const i = Math.floor(pos);
     const a = this.game.assets.trackFrame(i);

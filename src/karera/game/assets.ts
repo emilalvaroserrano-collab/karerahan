@@ -56,8 +56,8 @@ export const IMAGE_FILES: string[] = [
   ...Array.from({ length: 9 }, (_, i) => `cage_gates/gate_${i}.png`),
 ];
 
-/** Original side-scrolling track sprites, bg_track_0 .. bg_track_187. */
-export const TRACK_COUNT = 188;
+/** Original side-scrolling track sprites, bg_track_0 .. bg_track_396. */
+export const TRACK_COUNT = 397;
 
 export function trackSrc(i: number): string {
   const n = Math.max(0, Math.min(TRACK_COUNT - 1, i));
